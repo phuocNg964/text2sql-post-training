@@ -1,0 +1,26 @@
+model:
+  name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+  dtype: "bfloat16"       # use bfloat16 for training; 4-bit quant applied on top via bitsandbytes
+  load_in_4bit: true
+
+training:
+  lr: 2.0e-4
+  epochs: 3
+  batch_size: 4
+  grad_accum_steps: 4
+  max_seq_len: 2048
+  warmup_ratio: 0.05
+  lr_scheduler: "cosine"
+
+grpo:
+  num_generations: 4      # G in GRPO — number of completions per prompt
+  max_new_tokens: 256
+
+wandb:
+  project: "text2sql-post-training"
+  entity: null             # set to your W&B username or leave null for default
+
+data:
+  spider_path: "data/spider"
+  bird_path: "data/bird"
+  max_schema_tokens: 512   # truncate schema if too long

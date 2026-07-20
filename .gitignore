@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables (secrets!)
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# W&B runs
+wandb/
+
+# Model weights & checkpoints (too large for git)
+*.bin
+*.safetensors
+*.pt
+*.pth
+checkpoints/
+outputs/
+
+# Data (download separately)
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Ruff / linting cache
+.ruff_cache/
+
+# pytest
+.pytest_cache/
