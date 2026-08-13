@@ -21,6 +21,5 @@ wandb:
   entity: null             # set to your W&B username or leave null for default
 
 data:
-  spider_path: "data/spider"
-  bird_path: "data/bird"
+  spider_path: "data/spider_data"
   max_schema_tokens: 512   # truncate schema if too long

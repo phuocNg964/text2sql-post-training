@@ -2,7 +2,7 @@
 
 Post-training pipeline for Text-to-SQL: **Evaluation → SFT → Execution-based RL (GRPO)**
 
-**Stack:** Qwen2.5-Coder-7B-Instruct · Spider (train/dev) · BIRD (held-out) · W&B
+**Stack:** Qwen2.5-Coder-7B-Instruct · Spider (train/dev/test) · W&B
 
 ---
 
@@ -51,7 +51,7 @@ tests/          # Unit tests
 | Milestone | Status | Description |
 |---|---|---|
 | M0 Foundation | ✅ | Project setup, experiment tracking |
-| M1 Data & Eval | 🔲 | Evaluation pipeline (Spider dev + BIRD) |
+| M1 Data & Eval | ✅ | Evaluation pipeline (Spider dev) |
 | M2 Baseline | 🔲 | Benchmark candidate models |
 | M3 SFT | 🔲 | Supervised fine-tuning with LoRA |
 | M4 RL | 🔲 | GRPO with execution-based reward |
