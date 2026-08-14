@@ -34,7 +34,7 @@ checkpoints/
 outputs/
 
 # Data (download separately)
-data/
+/data/
 
 # OS
 .DS_Store
