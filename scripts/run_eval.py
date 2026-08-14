@@ -46,9 +46,10 @@ def load_records(split: str, data_dir: str) -> list[dict]:
         raise ValueError(f"Unknown split: {split!r}. Choose from: spider_train, spider_dev, spider_test")
 
 
-def load_predictions(path: str) -> list[str]:
+def load_predictions(path: str) -> tuple[list[str], list[dict]]:
     with open(path, encoding="utf-8") as f:
-        return [json.loads(line.strip())["predicted_sql"] for line in f]
+        rows = [json.loads(line.strip()) for line in f]
+    return [r["predicted_sql"] for r in rows], rows
 
 
 def main() -> None:
@@ -59,20 +60,28 @@ def main() -> None:
     parser.add_argument("--gold_eval", action="store_true",
                         help="Use gold SQL as predictions (sanity check — should give EX=1.0)")
     parser.add_argument("--log_wandb", action="store_true", help="Log results to W&B")
-    parser.add_argument("--output", default=None, help="Save per-sample results to JSON file")
+    parser.add_argument("--output", default=None,
+                        help="Save results to JSON file. Defaults to <predictions>_results.json")
     args = parser.parse_args()
 
     if not args.gold_eval and args.predictions is None:
         parser.error("Must provide --predictions or --gold_eval")
+
+    # Auto-derive output path from predictions filename
+    if args.output is None and args.predictions is not None:
+        base = args.predictions.removesuffix(".jsonl")
+        args.output = f"{base}_results.json"
+        print(f"Output  : {args.output} (auto)")
 
     records = load_records(args.split, args.data_dir)
     print(f"Loaded {len(records)} records from {args.split}")
 
     if args.gold_eval:
         predicted_sqls = [r["gold_sql"] for r in records]
+        pred_rows = []
         print("Mode: gold_eval (expected EX=1.0)")
     else:
-        predicted_sqls = load_predictions(args.predictions)
+        predicted_sqls, pred_rows = load_predictions(args.predictions)
         assert len(predicted_sqls) == len(records), (
             f"predictions ({len(predicted_sqls)}) != records ({len(records)})"
         )
@@ -86,9 +95,23 @@ def main() -> None:
     print(f"  Execution Accuracy : {result['execution_accuracy']:.4f}")
     print(f"  Correct            : {result['n_correct']} / {result['n_total']}")
     print(f"  Execution errors   : {exec_errors} / {result['n_total']}")
+
+    if pred_rows and "latency_s" in pred_rows[0]:
+        latencies = [r["latency_s"] for r in pred_rows]
+        vrams = [r["peak_vram_gb"] for r in pred_rows]
+        print(f"  Latency (mean/max) : {sum(latencies)/len(latencies):.2f}s / {max(latencies):.2f}s")
+        print(f"  Peak VRAM (mean/max): {sum(vrams)/len(vrams):.2f}GB / {max(vrams):.2f}GB")
+
     print("=" * 40)
 
     if args.output:
+        if pred_rows and "latency_s" in pred_rows[0]:
+            latencies = [r["latency_s"] for r in pred_rows]
+            vrams = [r["peak_vram_gb"] for r in pred_rows]
+            result["latency_mean_s"] = round(sum(latencies) / len(latencies), 3)
+            result["latency_max_s"] = round(max(latencies), 3)
+            result["peak_vram_mean_gb"] = round(sum(vrams) / len(vrams), 3)
+            result["peak_vram_max_gb"] = round(max(vrams), 3)
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
         print(f"\nPer-sample results saved to: {args.output}")
