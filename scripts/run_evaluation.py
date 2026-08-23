@@ -1,23 +1,27 @@
 """
-M1 Evaluation Entry Point
+M2 Evaluation Entry Point
 =========================
-Run execution accuracy evaluation on a dataset split.
+Run execution accuracy evaluation against a predictions.jsonl produced by run_inference.py.
 
 Splits:
-    spider_dev   — 100 samples from dev.json   (monitor during training)
-    spider_test  — 100 samples from test.json  (final benchmark, held-out)
-    spider_train — 1000 samples from train_spider.json  (sanity check only)
+    spider_dev   — dev.json
+    spider_test  — test.json  (final benchmark, held-out)
+    spider_train — train_spider.json  (sanity check only)
 
 Usage:
-    python scripts/run_eval.py \\
+    python scripts/run_evaluation.py \\
         --predictions path/to/predictions.jsonl \\
         --split spider_dev
 
     # Sanity check: gold SQL should give EX=1.0
-    python scripts/run_eval.py --split spider_dev --gold_eval
+    python scripts/run_evaluation.py --split spider_dev --gold_eval
 
-Output format expected (one JSON per line):
-    {"predicted_sql": "SELECT ..."}
+Output format expected in predictions.jsonl (one JSON per line):
+    {"generated_sql": "SELECT ..."}
+
+Output files (written alongside --output):
+    <base>_evaluation.json  — full per-sample results
+    <base>_summary.json  — per-model summary (merged with inference metrics)
 """
 
 import argparse
@@ -46,14 +50,15 @@ def load_records(split: str, data_dir: str) -> list[dict]:
         raise ValueError(f"Unknown split: {split!r}. Choose from: spider_train, spider_dev, spider_test")
 
 
-def load_predictions(path: str) -> tuple[list[str], list[dict]]:
+def load_predictions(path: str) -> list[str]:
     with open(path, encoding="utf-8") as f:
         rows = [json.loads(line.strip()) for line in f]
-    return [r["predicted_sql"] for r in rows], rows
+    return [r["generated_sql"] for r in rows]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL evaluation")
+    parser.add_argument("--model", default=None, help="Model name/ID — written to summary JSON")
     parser.add_argument("--split", required=True, choices=["spider_train", "spider_dev", "spider_test"])
     parser.add_argument("--data_dir", default="data/", help="Path to data/ directory")
     parser.add_argument("--predictions", default=None, help="Path to predictions.jsonl")
@@ -67,10 +72,10 @@ def main() -> None:
     if not args.gold_eval and args.predictions is None:
         parser.error("Must provide --predictions or --gold_eval")
 
-    # Auto-derive output path from predictions filename
+    # Auto-derive output path into the same folder as predictions
     if args.output is None and args.predictions is not None:
-        base = args.predictions.removesuffix(".jsonl")
-        args.output = f"{base}_results.json"
+        pred_dir = os.path.dirname(os.path.abspath(args.predictions))
+        args.output = os.path.join(pred_dir, "evaluation.json")
         print(f"Output  : {args.output} (auto)")
 
     records = load_records(args.split, args.data_dir)
@@ -78,43 +83,52 @@ def main() -> None:
 
     if args.gold_eval:
         predicted_sqls = [r["gold_sql"] for r in records]
-        pred_rows = []
         print("Mode: gold_eval (expected EX=1.0)")
     else:
-        predicted_sqls, pred_rows = load_predictions(args.predictions)
+        predicted_sqls = load_predictions(args.predictions)
         assert len(predicted_sqls) == len(records), (
             f"predictions ({len(predicted_sqls)}) != records ({len(records)})"
         )
 
     result = evaluate(records, predicted_sqls)
 
-    exec_errors = sum(1 for r in result["results"] if r["execution_error"])
+    invalid_count = sum(1 for r in result["results"] if r["invalid_sql"])
 
     print()
     print("=" * 40)
     print(f"  Execution Accuracy : {result['execution_accuracy']:.4f}")
     print(f"  Correct            : {result['n_correct']} / {result['n_total']}")
-    print(f"  Execution errors   : {exec_errors} / {result['n_total']}")
-
-    if pred_rows and "latency_s" in pred_rows[0]:
-        latencies = [r["latency_s"] for r in pred_rows]
-        vrams = [r["peak_vram_gb"] for r in pred_rows]
-        print(f"  Latency (mean/max) : {sum(latencies)/len(latencies):.2f}s / {max(latencies):.2f}s")
-        print(f"  Peak VRAM (mean/max): {sum(vrams)/len(vrams):.2f}GB / {max(vrams):.2f}GB")
-
+    print(f"  Invalid SQL        : {invalid_count} / {result['n_total']}")
     print("=" * 40)
 
     if args.output:
-        if pred_rows and "latency_s" in pred_rows[0]:
-            latencies = [r["latency_s"] for r in pred_rows]
-            vrams = [r["peak_vram_gb"] for r in pred_rows]
-            result["latency_mean_s"] = round(sum(latencies) / len(latencies), 3)
-            result["latency_max_s"] = round(max(latencies), 3)
-            result["peak_vram_mean_gb"] = round(sum(vrams) / len(vrams), 3)
-            result["peak_vram_max_gb"] = round(max(vrams), 3)
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
-        print(f"\nPer-sample results saved to: {args.output}")
+        print(f"\nResults saved to: {args.output}")
+
+        # Write per-model summary, merging in inference metrics if available
+        pred_dir = os.path.dirname(os.path.abspath(args.predictions)) if args.predictions else None
+        metrics_path = os.path.join(pred_dir, "inference_metrics.json") if pred_dir else None
+        inference_metrics = {}
+        if metrics_path and os.path.exists(metrics_path):
+            with open(metrics_path, encoding="utf-8") as f:
+                inference_metrics = json.load(f)
+
+        summary = {
+            "model": args.model or "",
+            "dataset": args.split,
+            "num_examples": result["n_total"],
+            "execution_accuracy": result["execution_accuracy"],
+            "invalid_sql_rate": round(invalid_count / result["n_total"], 4) if result["n_total"] else 0.0,
+            "avg_latency_ms": inference_metrics.get("avg_latency_ms"),
+            "p50_latency_ms": inference_metrics.get("p50_latency_ms"),
+            "p95_latency_ms": inference_metrics.get("p95_latency_ms"),
+            "peak_vram_gb": inference_metrics.get("peak_vram_gb"),
+        }
+        summary_path = os.path.join(os.path.dirname(os.path.abspath(args.output)), "summary.json")
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        print(f"Summary  saved to: {summary_path}")
 
     if args.log_wandb:
         import yaml
@@ -131,7 +145,7 @@ def main() -> None:
         log_metrics({
             f"eval/{args.split}/execution_accuracy": result["execution_accuracy"],
             f"eval/{args.split}/n_correct": result["n_correct"],
-            f"eval/{args.split}/execution_errors": exec_errors,
+            f"eval/{args.split}/invalid_sql": invalid_count,
         })
         finish_run()
         print("Logged to W&B.")
