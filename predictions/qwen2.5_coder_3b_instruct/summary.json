@@ -1,0 +1,11 @@
+{
+  "model": "Qwen/Qwen2.5-Coder-3B-Instruct",
+  "dataset": "spider_dev",
+  "num_examples": 100,
+  "execution_accuracy": 0.59,
+  "invalid_sql_rate": 0.21,
+  "avg_latency_ms": 3687,
+  "p50_latency_ms": 3560,
+  "p95_latency_ms": 6462,
+  "peak_vram_gb": 2.06
+}
