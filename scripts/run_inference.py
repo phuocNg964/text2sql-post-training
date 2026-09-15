@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.data.formatter import build_prompt_from_record
-from src.data.loader import load_spider
+from src.data.loader import load_eval_set, load_spider, save_eval_set
 from src.models.loader import load_model
 
 SYSTEM_PROMPT = (
@@ -67,7 +67,11 @@ def load_records(split: str, data_dir: str, n: int | None = None) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL inference")
     parser.add_argument("--model", required=True, help="HuggingFace model name or local path")
-    parser.add_argument("--split", required=True, choices=["spider_dev", "spider_test"])
+    parser.add_argument("--adapter", default=None, help="Path to LoRA adapter (optional). Merged into model at load time.")
+    parser.add_argument("--split", choices=["spider_dev", "spider_test"], default="spider_dev",
+                        help="Dataset split (default: spider_dev)")
+    parser.add_argument("--eval_set", default=None,
+                        help="Path to frozen eval JSONL (e.g. data/eval_holdout.jsonl). If not exists, creates it.")
     parser.add_argument("--data_dir", default="data/", help="Path to data/ directory")
     parser.add_argument("--output", required=True, help="Path to save predictions .jsonl")
     parser.add_argument("--max_new_tokens", type=int, default=256)
@@ -77,15 +81,32 @@ def main() -> None:
 
     print("=" * 50)
     print(f"  Model    : {args.model}")
-    print(f"  Split    : {args.split}")
+    if args.adapter:
+        print(f"  Adapter  : {args.adapter}")
+    if args.eval_set:
+        print(f"  Eval Set : {args.eval_set}")
+    else:
+        print(f"  Split    : {args.split}")
     print(f"  Output   : {args.output}")
     print("=" * 50)
 
-    records = load_records(args.split, args.data_dir, n=args.n_samples)
+    if args.eval_set:
+        if os.path.exists(args.eval_set):
+            print(f"Loading frozen eval set from {args.eval_set}...")
+            records = load_eval_set(args.eval_set, args.data_dir)
+        else:
+            n = args.n_samples or 100
+            print(f"Eval set '{args.eval_set}' not found. Creating from {args.split} (n={n}, seed=42)...")
+            records = load_records(args.split, args.data_dir, n=n)
+            save_eval_set(records, args.eval_set)
+            print(f"Saved {len(records)} records to {args.eval_set}\n")
+    else:
+        records = load_records(args.split, args.data_dir, n=args.n_samples)
+
     print(f"Loaded {len(records)} records\n")
 
     print("Loading model...")
-    model, tokenizer = load_model(args.model)
+    model, tokenizer = load_model(args.model, adapter=args.adapter)
     print("Model ready\n")
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
