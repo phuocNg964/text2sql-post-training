@@ -1,42 +1,34 @@
 """
 Model loader for Text-to-SQL inference.
 
-Extracted from smoke_test.py for reuse across scripts.
-Always uses 4-bit quantization (NF4) — required for 7B models on T4 (16GB VRAM).
+Loads in float16 (not 4-bit) — correct for inference since LoRA merging
+at 4-bit precision introduces rounding errors. The 3B model fits in float16
+on a T4 (16 GB) with ~6.4 GB VRAM.
 """
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def load_model(
     model_name: str,
-    load_in_4bit: bool = True,
     adapter: str | None = None,
 ):
     """
-    Load a causal LM and its tokenizer.
+    Load a causal LM and its tokenizer in float16 for inference.
 
     Args:
-        model_name:   HuggingFace model identifier (e.g. "Qwen/Qwen2.5-Coder-7B-Instruct")
-        load_in_4bit: if True, load with NF4 4-bit quantization (default: True)
-        adapter:      Optional path to a LoRA adapter directory. When provided,
-                      the adapter is merged into the base model via merge_and_unload().
+        model_name: HuggingFace model identifier or local path.
+        adapter:    Optional LoRA adapter path or HF repo ID.
+                    Merged into the base model via merge_and_unload().
 
     Returns:
-        (model, tokenizer) tuple. Model is in eval mode on the best available device.
+        (model, tokenizer) tuple in eval mode on the best available device.
     """
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=load_in_4bit,
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-    ) if load_in_4bit else None
-
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        quantization_config=bnb_config,
+        torch_dtype=torch.float16,
         device_map="auto",
     )
 
