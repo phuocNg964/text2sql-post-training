@@ -1,0 +1,45 @@
+model:
+  name: "Qwen/Qwen2.5-Coder-3B-Instruct"
+  max_seq_length: 2048
+  load_in_4bit: true          # QLoRA: 4-bit base, comfortable on T4 (16 GB)
+
+lora:
+  r: 16
+  alpha: 32                   # 2 × r (standard heuristic)
+  dropout: 0                  # 0 enables Unsloth's faster internal path
+  bias: "none"
+  target_modules:             # all major linear layers (Unsloth docs)
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+training:
+  epochs: 3
+  batch_size: 2
+  grad_accum: 8               # effective batch = batch_size × grad_accum = 16
+  learning_rate: 2.0e-4
+  lr_scheduler: "cosine"
+  warmup_ratio: 0.05          # 5% of total steps
+  weight_decay: 0.01          # light regularization on LoRA adapter weights
+  optim: "adamw_8bit"
+  seed: 42
+
+data:
+  path: "data/sft_full.jsonl"
+  n_train: 1000
+  n_eval: 100
+
+output:
+  dir: "checkpoints/sft"
+
+wandb:
+  project: "text2sql-post-training"
+  name: "sft-qwen3b-r16"
+  tags:
+    - m3
+    - sft
+

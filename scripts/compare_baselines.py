@@ -1,7 +1,9 @@
+import sys
+
 """
 compare_baselines.py
 =================
-Compare M2 candidate models. Outputs a Markdown table.
+Compare M2 candidate models. Reads summary.json from each model subdirectory.
 
 Usage:
     python scripts/compare_baselines.py --pred_dir predictions/ --out_dir analysis/m2_comparison/
@@ -12,77 +14,66 @@ import glob
 import json
 import os
 
+# Map model basename → (display name, param size)
+MODEL_META = {
+    "Qwen2.5-Coder-1.5B-Instruct": ("Qwen2.5-Coder-1.5B", "1.5B"),
+    "Qwen2.5-Coder-3B-Instruct":   ("Qwen2.5-Coder-3B",   "3B"),
+    "deepseek-coder-6.7b-instruct": ("DeepSeek-Coder-6.7B", "6.7B"),
+    "Qwen2.5-Coder-7B-Instruct":   ("Qwen2.5-Coder-7B",   "7B"),
+}
 
-def short_name(model: str) -> str:
-    name = model.split("/")[-1]
-    aliases = {
-        "Qwen2.5-Coder-7B-Instruct": "Qwen2.5-Coder-7B",
-        "Mistral-7B-Instruct-v0.3":  "Mistral-7B",
-        "Qwen3-8B":                  "Qwen3-8B",
-    }
-    return aliases.get(name, name[:24])
-
-
-def _load_jsonl_stats(results_path: str) -> dict:
-    """Compute latency/VRAM aggregates from the companion .jsonl file."""
-    jsonl_path = results_path.replace("_results.json", ".jsonl")
-    if not os.path.exists(jsonl_path):
-        return {}
-    with open(jsonl_path, encoding="utf-8") as f:
-        rows = [json.loads(line) for line in f if line.strip()]
-    latencies = [r["latency_s"]    for r in rows if "latency_s"    in r]
-    vrams     = [r["peak_vram_gb"] for r in rows if "peak_vram_gb" in r]
-    stats = {}
-    if latencies:
-        stats["latency_mean_s"] = round(sum(latencies) / len(latencies), 3)
-        stats["latency_max_s"]  = round(max(latencies), 3)
-    if vrams:
-        stats["peak_vram_mean_gb"] = round(sum(vrams) / len(vrams), 3)
-        stats["peak_vram_max_gb"]  = round(max(vrams), 3)
-    return stats
+# Display order (by params ascending)
+PARAM_ORDER = {"1.5B": 0, "3B": 1, "6.7B": 2, "7B": 3}
 
 
-def fmt(val, fmt_str: str = "") -> str:
-    if val is None:
-        return "n/a"
-    return format(val, fmt_str)
+def fmt_pct(rate: float | None) -> str:
+    if rate is None:
+        return "—"
+    return f"{rate:.1%}"
+
+
+def fmt_ms(ms: int | float | None) -> str:
+    if ms is None:
+        return "— ms"
+    return f"{ms:.0f} ms"
+
+
+def fmt_gb(gb: float | None) -> str:
+    if gb is None:
+        return "— GB"
+    return f"{gb:.2f} GB"
+
+
+def fmt_ex(ex: float | None) -> str:
+    if ex is None:
+        return "—"
+    return f"{ex:.4f}"
 
 
 def load_all(pred_dir: str) -> list[dict]:
-    paths = sorted(glob.glob(os.path.join(pred_dir, "*_results.json")))
+    paths = sorted(glob.glob(os.path.join(pred_dir, "*/summary.json")))
     if not paths:
-        raise FileNotFoundError(f"No *_results.json found in: {pred_dir}")
+        raise FileNotFoundError(f"No */summary.json found in: {pred_dir}")
 
     rows = []
     for path in paths:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
 
-        results    = d["results"]
-        n          = d["n_total"]
-        n_correct  = d["n_correct"]
-        n_exec_err = sum(1 for r in results if r.get("execution_error"))
-        n_wrong    = n - n_correct - n_exec_err
+        model_id = d.get("model", "")
+        basename = model_id.split("/")[-1]
+        display_name, params = MODEL_META.get(basename, (basename[:24], "?"))
 
-        lat_vram = _load_jsonl_stats(path)
-        for key in ("latency_mean_s", "latency_max_s", "peak_vram_mean_gb", "peak_vram_max_gb"):
-            if key not in d and key in lat_vram:
-                d[key] = lat_vram[key]
-
-        model = d.get("model", os.path.basename(path).replace("_results.json", ""))
         rows.append({
-            "Model":      short_name(model),
-            "EX":         d["execution_accuracy"],
-            "Correct":    f"{n_correct}/{n}",
-            "Wrong":      n_wrong,
-            "Exec Err":   n_exec_err,
-            "Lat Mean":   d.get("latency_mean_s"),
-            "Lat Max":    d.get("latency_max_s"),
-            "VRAM Mean":  d.get("peak_vram_mean_gb"),
-            "VRAM Max":   d.get("peak_vram_max_gb"),
+            "Model":       display_name,
+            "Params":      params,
+            "EX":          d.get("execution_accuracy"),
+            "Invalid SQL": d.get("invalid_sql_rate"),
+            "Avg Latency": d.get("avg_latency_ms"),
+            "Peak VRAM":   d.get("peak_vram_gb"),
         })
 
-    rows.sort(key=lambda r: -r["EX"])
+    rows.sort(key=lambda r: PARAM_ORDER.get(r["Params"], 99))
     return rows
 
 
@@ -90,22 +81,19 @@ def build_md_table(rows: list[dict]) -> str:
     lines = [
         "# M2 Baseline — Model Comparison",
         "",
-        "| Model | EX | Correct | Wrong | Exec Err | Lat Mean (s) | Lat Max (s) | VRAM Mean (GB) | VRAM Max (GB) |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Model | Params | EX ↑ | Invalid SQL ↓ | Avg Latency ↓ | Peak VRAM ↓ |",
+        "|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['Model']} "
-            f"| {r['EX']:.4f} "
-            f"| {r['Correct']} "
-            f"| {r['Wrong']} "
-            f"| {r['Exec Err']} "
-            f"| {fmt(r['Lat Mean'], '.2f')} "
-            f"| {fmt(r['Lat Max'], '.2f')} "
-            f"| {fmt(r['VRAM Mean'], '.2f')} "
-            f"| {fmt(r['VRAM Max'], '.2f')} |"
+            f"| {r['Params']} "
+            f"| {fmt_ex(r['EX'])} "
+            f"| {fmt_pct(r['Invalid SQL'])} "
+            f"| {fmt_ms(r['Avg Latency'])} "
+            f"| {fmt_gb(r['Peak VRAM'])} |"
         )
-    lines += ["", f"**Best:** {rows[0]['Model']}  EX={rows[0]['EX']:.4f}"]
+
     return "\n".join(lines)
 
 
@@ -115,6 +103,7 @@ def main() -> None:
     parser.add_argument("--out_dir", default="analysis/m2_comparison/")
     args = parser.parse_args()
 
+    sys.stdout.reconfigure(encoding="utf-8")
     rows = load_all(args.pred_dir)
     os.makedirs(args.out_dir, exist_ok=True)
 

@@ -1,0 +1,11 @@
+{
+  "model": "deepseek-ai/deepseek-coder-6.7b-instruct",
+  "dataset": "spider_dev",
+  "num_examples": 100,
+  "execution_accuracy": 0.63,
+  "invalid_sql_rate": 0.04,
+  "avg_latency_ms": 6250,
+  "p50_latency_ms": 5521,
+  "p95_latency_ms": 11266,
+  "peak_vram_gb": 4.43
+}

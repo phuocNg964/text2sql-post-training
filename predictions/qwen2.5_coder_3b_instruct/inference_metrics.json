@@ -1,0 +1,9 @@
+{
+  "num_examples": 100,
+  "peak_vram_gb": 2.06,
+  "avg_latency_ms": 3687,
+  "p50_latency_ms": 3560,
+  "p95_latency_ms": 6462,
+  "total_input_tokens": 24760,
+  "total_output_tokens": 4117
+}
