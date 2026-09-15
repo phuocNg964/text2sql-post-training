@@ -1,0 +1,11 @@
+{
+  "model": "Qwen2.5-Coder-3B-SFT",
+  "dataset": "spider_dev",
+  "num_examples": 100,
+  "execution_accuracy": 0.78,
+  "invalid_sql_rate": 0.11,
+  "avg_latency_ms": 1527,
+  "p50_latency_ms": 1181,
+  "p95_latency_ms": 3903,
+  "peak_vram_gb": 5.84
+}
