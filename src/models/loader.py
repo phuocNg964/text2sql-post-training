@@ -12,13 +12,16 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 def load_model(
     model_name: str,
     load_in_4bit: bool = True,
+    adapter: str | None = None,
 ):
     """
     Load a causal LM and its tokenizer.
 
     Args:
-        model_name: HuggingFace model identifier (e.g. "Qwen/Qwen2.5-Coder-7B-Instruct")
+        model_name:   HuggingFace model identifier (e.g. "Qwen/Qwen2.5-Coder-7B-Instruct")
         load_in_4bit: if True, load with NF4 4-bit quantization (default: True)
+        adapter:      Optional path to a LoRA adapter directory. When provided,
+                      the adapter is merged into the base model via merge_and_unload().
 
     Returns:
         (model, tokenizer) tuple. Model is in eval mode on the best available device.
@@ -36,5 +39,12 @@ def load_model(
         quantization_config=bnb_config,
         device_map="auto",
     )
+
+    if adapter:
+        from peft import PeftModel
+        print(f"Merging adapter: {adapter}")
+        model = PeftModel.from_pretrained(model, adapter)
+        model = model.merge_and_unload()
+
     model.eval()
     return model, tokenizer

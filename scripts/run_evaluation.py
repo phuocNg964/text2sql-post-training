@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.data.loader import load_spider
+from src.data.loader import load_eval_set, load_spider
 from src.eval.evaluator import evaluate
 
 
@@ -59,7 +59,10 @@ def load_predictions(path: str) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL evaluation")
     parser.add_argument("--model", default=None, help="Model name/ID — written to summary JSON")
-    parser.add_argument("--split", required=True, choices=["spider_train", "spider_dev", "spider_test"])
+    parser.add_argument("--split", choices=["spider_train", "spider_dev", "spider_test"], default="spider_dev",
+                        help="Dataset split (default: spider_dev)")
+    parser.add_argument("--eval_set", default=None,
+                        help="Path to frozen eval JSONL (e.g. data/eval_holdout.jsonl)")
     parser.add_argument("--data_dir", default="data/", help="Path to data/ directory")
     parser.add_argument("--predictions", default=None, help="Path to predictions.jsonl")
     parser.add_argument("--gold_eval", action="store_true",
@@ -78,8 +81,12 @@ def main() -> None:
         args.output = os.path.join(pred_dir, "evaluation.json")
         print(f"Output  : {args.output} (auto)")
 
-    records = load_records(args.split, args.data_dir)
-    print(f"Loaded {len(records)} records from {args.split}")
+    if args.eval_set and os.path.exists(args.eval_set):
+        records = load_eval_set(args.eval_set, args.data_dir)
+        print(f"Loaded {len(records)} records from frozen eval set: {args.eval_set}")
+    else:
+        records = load_records(args.split, args.data_dir)
+        print(f"Loaded {len(records)} records from {args.split}")
 
     if args.gold_eval:
         predicted_sqls = [r["gold_sql"] for r in records]

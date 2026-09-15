@@ -33,8 +33,9 @@ wandb/
 checkpoints/
 outputs/
 
-# Data (download separately)
-/data/
+# Data (raw spider dataset downloaded separately)
+data/spider_data/
+data/__MACOSX/
 
 # OS
 .DS_Store

@@ -68,3 +68,35 @@ def load_spider(
         })
 
     return records
+
+
+def save_eval_set(records: list[dict], path: str) -> None:
+    """Save evaluation records to JSONL without machine-specific absolute paths."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for r in records:
+            row = {
+                "question": r["question"],
+                "gold_sql": r["gold_sql"],
+                "db_id": r["db_id"],
+                "source": r.get("source", "spider_dev"),
+            }
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def load_eval_set(path: str, data_dir: str) -> list[dict]:
+    """Load evaluation records from frozen JSONL and reconstruct local db_path."""
+    spider_root = os.path.join(data_dir, "spider_data")
+    records = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            source = r.get("source", "spider_dev")
+            db_root = os.path.join(
+                spider_root, "test_database" if "test" in source else "database"
+            )
+            r["db_path"] = _build_db_path(r["db_id"], db_root)
+            records.append(r)
+    return records
