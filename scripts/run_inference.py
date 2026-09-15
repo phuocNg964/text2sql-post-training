@@ -1,24 +1,16 @@
 """
-M2 Inference Script
-===================
-Run model inference on a Spider split and save predictions to .jsonl.
-
-Uses chat template (not raw completion) — required for *-Instruct models.
-
-Splits:
-    spider_dev  — dev.json
-    spider_test — test.json
+run_inference.py — Text-to-SQL Inference
 
 Usage:
     python scripts/run_inference.py \\
-        --model Qwen/Qwen2.5-Coder-7B-Instruct \\
-        --split spider_dev \\
-        --data_dir data/ \\
-        --output predictions/coder7b_dev.jsonl
+        --model Qwen/Qwen2.5-Coder-3B-Instruct \\
+        --adapter PhuocNg9604/qwen2.5-coder-3b-text2sql-sft \\
+        --eval_set data/eval_holdout.jsonl \\
+        --output predictions/qwen2.5_coder_3b_sft
 
-Output files:
-    <output>                          — predictions.jsonl (one JSON per line)
-    <output>.replace('.jsonl', '')_metrics.json  — inference_metrics.json
+Output folder contains:
+    predictions.jsonl     — one prediction dict per line
+    inference_metrics.json — latency and VRAM stats
 """
 
 import argparse
@@ -47,12 +39,10 @@ SYSTEM_PROMPT = (
 
 
 def parse_sql(text: str) -> str:
-    """Extract SQL from model output. Strips <think> block, then prefers ```sql, falls back to raw text."""
+    """Strip <think> block, prefer ```sql fence, fall back to raw text."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
+    return match.group(1).strip() if match else text.strip()
 
 
 def load_records(split: str, data_dir: str, n: int | None = None) -> list[dict]:
@@ -60,56 +50,58 @@ def load_records(split: str, data_dir: str, n: int | None = None) -> list[dict]:
         return load_spider(data_dir, split="dev", n=n)
     elif split == "spider_test":
         return load_spider(data_dir, split="test", n=n)
+    raise ValueError(f"Unknown split: {split!r}. Choose from: spider_dev, spider_test")
+
+
+def resolve_output(output: str) -> tuple[str, str]:
+    """Return (output_dir, output_file). Accepts either a folder or a .jsonl path."""
+    if output.endswith(".jsonl"):
+        output_file = output
+        output_dir = os.path.dirname(os.path.abspath(output_file))
     else:
-        raise ValueError(f"Unknown split: {split!r}. Choose from: spider_dev, spider_test")
+        output_dir = os.path.abspath(output)
+        output_file = os.path.join(output_dir, "predictions.jsonl")
+    return output_dir, output_file
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL inference")
     parser.add_argument("--model", required=True, help="HuggingFace model name or local path")
-    parser.add_argument("--adapter", default=None, help="Path to LoRA adapter (optional). Merged into model at load time.")
-    parser.add_argument("--split", choices=["spider_dev", "spider_test"], default="spider_dev",
-                        help="Dataset split (default: spider_dev)")
+    parser.add_argument("--adapter", default=None, help="LoRA adapter path or HF repo ID (merged at load time)")
+    parser.add_argument("--split", choices=["spider_dev", "spider_test"], default="spider_dev")
     parser.add_argument("--eval_set", default=None,
-                        help="Path to frozen eval JSONL (e.g. data/eval_holdout.jsonl). If not exists, creates it.")
-    parser.add_argument("--data_dir", default="data/", help="Path to data/ directory")
-    parser.add_argument("--output", required=True, help="Path to save predictions .jsonl")
+                        help="Frozen eval JSONL path. Created from --split if missing.")
+    parser.add_argument("--data_dir", default="data/")
+    parser.add_argument("--output", required=True, help="Output folder or .jsonl file path")
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--n_samples", type=int, default=None,
-                        help="Number of samples to run. Default: all in split.")
+    parser.add_argument("--n_samples", type=int, default=None)
     args = parser.parse_args()
 
     print("=" * 50)
     print(f"  Model    : {args.model}")
     if args.adapter:
         print(f"  Adapter  : {args.adapter}")
-    if args.eval_set:
-        print(f"  Eval Set : {args.eval_set}")
-    else:
-        print(f"  Split    : {args.split}")
+    print(f"  Eval Set : {args.eval_set}" if args.eval_set else f"  Split    : {args.split}")
     print(f"  Output   : {args.output}")
     print("=" * 50)
 
     if args.eval_set:
         if os.path.exists(args.eval_set):
-            print(f"Loading frozen eval set from {args.eval_set}...")
             records = load_eval_set(args.eval_set, args.data_dir)
+            print(f"Loaded {len(records)} records from {args.eval_set}")
         else:
             n = args.n_samples or 100
-            print(f"Eval set '{args.eval_set}' not found. Creating from {args.split} (n={n}, seed=42)...")
+            print(f"Creating eval set from {args.split} (n={n}, seed=42) → {args.eval_set}")
             records = load_records(args.split, args.data_dir, n=n)
             save_eval_set(records, args.eval_set)
-            print(f"Saved {len(records)} records to {args.eval_set}\n")
     else:
         records = load_records(args.split, args.data_dir, n=args.n_samples)
+        print(f"Loaded {len(records)} records from {args.split}")
 
-    print(f"Loaded {len(records)} records\n")
-
-    print("Loading model...")
     model, tokenizer = load_model(args.model, adapter=args.adapter)
-    print("Model ready\n")
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+    output_dir, output_file = resolve_output(args.output)
+    os.makedirs(output_dir, exist_ok=True)
 
     predictions = []
     peak_vram_gb = 0.0
@@ -137,17 +129,12 @@ def main() -> None:
         generation_time_ms = round((time.perf_counter() - t0) * 1000)
 
         output_tokens = output_ids.shape[1] - input_tokens
-        finish_reason = "stop" if output_tokens < args.max_new_tokens else "length"
-
         if torch.cuda.is_available():
-            sample_vram = torch.cuda.max_memory_allocated() / 1024**3
-            peak_vram_gb = max(peak_vram_gb, sample_vram)
+            peak_vram_gb = max(peak_vram_gb, torch.cuda.max_memory_allocated() / 1024**3)
 
-        generated = tokenizer.decode(
-            output_ids[0][input_tokens:],
-            skip_special_tokens=True,
-        ).strip()
-        generated_sql = parse_sql(generated)
+        generated_sql = parse_sql(
+            tokenizer.decode(output_ids[0][input_tokens:], skip_special_tokens=True).strip()
+        )
 
         predictions.append({
             "example_id": f"{record['source']}_{i:04d}",
@@ -158,39 +145,31 @@ def main() -> None:
             "generation_time_ms": generation_time_ms,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "finish_reason": finish_reason,
+            "finish_reason": "stop" if output_tokens < args.max_new_tokens else "length",
         })
-
         print(f"  [{i + 1:>3}/{len(records)}] {record['db_id']} | {generation_time_ms}ms | {generated_sql[:60]}...")
 
-    # Write predictions.jsonl
-    with open(args.output, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         for p in predictions:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
 
-    # Write inference_metrics.json
-    latencies = [p["generation_time_ms"] for p in predictions]
-    latencies_sorted = sorted(latencies)
-    n = len(latencies_sorted)
-    p50 = latencies_sorted[int(n * 0.50)]
-    p95 = latencies_sorted[min(int(n * 0.95), n - 1)]
-
+    latencies = sorted(p["generation_time_ms"] for p in predictions)
+    n = len(latencies)
     metrics = {
-        "num_examples": len(predictions),
+        "num_examples": n,
         "peak_vram_gb": round(peak_vram_gb, 2),
-        "avg_latency_ms": round(sum(latencies) / len(latencies)),
-        "p50_latency_ms": p50,
-        "p95_latency_ms": p95,
+        "avg_latency_ms": round(sum(latencies) / n),
+        "p50_latency_ms": latencies[int(n * 0.50)],
+        "p95_latency_ms": latencies[min(int(n * 0.95), n - 1)],
         "total_input_tokens": sum(p["input_tokens"] for p in predictions),
         "total_output_tokens": sum(p["output_tokens"] for p in predictions),
     }
-    output_dir = os.path.dirname(os.path.abspath(args.output))
     metrics_path = os.path.join(output_dir, "inference_metrics.json")
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
 
-    print(f"\nSaved {len(predictions)} predictions -> {args.output}")
-    print(f"Metrics -> {metrics_path}")
+    print(f"\nPredictions → {output_file}")
+    print(f"Metrics     → {metrics_path}")
 
 
 if __name__ == "__main__":
