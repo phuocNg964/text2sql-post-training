@@ -16,6 +16,7 @@ dependencies = [
     "trl>=0.12.0",
     "accelerate>=0.34.0",
     "bitsandbytes>=0.44.0",
+    "unsloth",
     # Data
     "datasets>=3.0.0",
     "sqlglot>=23.0.0",

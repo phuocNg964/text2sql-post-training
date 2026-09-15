@@ -241,6 +241,53 @@ def main() -> None:
     rng.shuffle(sampled)
 
     print(f"\nTotal collected (after validation): {len(sampled)}")
+    # Deduplicate: a record can land in multiple pools (e.g., single-table + agg/groupby).
+    # Deduplicate: a record can appear in multiple pools (e.g., single-table + agg/groupby).
+    # Keep first occurrence of each (question, db_id) pair after shuffle.
+    seen: set[tuple] = set()
+    deduped: list[dict] = []
+    for rec in sampled:
+        key = (rec["question"], rec["db_id"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(rec)
+    n_dupes = len(sampled) - len(deduped)
+    if n_dupes:
+        print(f"  Deduplicated: removed {n_dupes} cross-pool duplicates")
+    sampled = deduped
+
+    print(f"\nTotal collected (after validation + dedup): {len(sampled)}")
+    # Top-up: if dedup left us short of args.n, fill from remaining unseen pool items.
+    # This avoids hardcoding an overshoot value like --n 1140.
+    shortage = args.n - len(deduped)
+    if shortage > 0:
+        print(f"  Topping up {shortage} examples from remaining pool items ...")
+        # Collect all unseen candidates across every pool
+        topup_candidates = [
+            rec for pool in pools.values()
+            for rec in pool
+            if (rec["question"], rec["db_id"]) not in seen
+        ]
+        rng.shuffle(topup_candidates)
+        topup_added = 0
+        for rec in topup_candidates:
+            if len(deduped) >= args.n:
+                break
+            key = (rec["question"], rec["db_id"])
+            if key in seen:          # already picked during main loop
+                continue
+            valid, _ = validate_example(rec)
+            if valid:
+                seen.add(key)
+                deduped.append(rec)
+                topup_added += 1
+        if len(deduped) < args.n:
+            print(f"  WARNING: pool exhausted — produced {len(deduped)} instead of {args.n}")
+        else:
+            print(f"  Topped up with {topup_added} additional examples")
+
+    sampled = deduped[:args.n]   # trim to exactly args.n (handles any minor overshoot)
+    print(f"\nTotal collected (after validation + dedup + top-up): {len(sampled)}")
 
     # ── 5. Format and write ───────────────────────────────────────────────────
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
