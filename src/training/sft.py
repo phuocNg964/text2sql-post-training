@@ -9,9 +9,6 @@ import random
 
 import torch
 from datasets import Dataset
-from trl import SFTConfig, SFTTrainer
-from unsloth import FastLanguageModel
-from unsloth.chat_templates import get_chat_template, train_on_responses_only
 
 
 def load_and_split(path: str, n_train: int, n_eval: int, seed: int) -> tuple[Dataset, Dataset]:
@@ -48,9 +45,9 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         report_to:  Logging target. Pass "none" to disable W&B (used by smoke test).
     """
 
-    from trl import SFTConfig, SFTTrainer
     from unsloth import FastLanguageModel
     from unsloth.chat_templates import get_chat_template, train_on_responses_only
+    from trl import SFTConfig, SFTTrainer
 
     model_cfg    = cfg["model"]
     lora_cfg     = cfg["lora"]
