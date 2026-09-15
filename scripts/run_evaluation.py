@@ -1,27 +1,18 @@
 """
-M2 Evaluation Entry Point
-=========================
-Run execution accuracy evaluation against a predictions.jsonl produced by run_inference.py.
-
-Splits:
-    spider_dev   — dev.json
-    spider_test  — test.json  (final benchmark, held-out)
-    spider_train — train_spider.json  (sanity check only)
+run_evaluation.py — Text-to-SQL Execution Accuracy Evaluation
 
 Usage:
     python scripts/run_evaluation.py \\
-        --predictions path/to/predictions.jsonl \\
-        --split spider_dev
+        --model "Qwen2.5-Coder-3B-SFT" \\
+        --eval_set data/eval_holdout.jsonl \\
+        --predictions predictions/qwen2.5_coder_3b_sft
 
-    # Sanity check: gold SQL should give EX=1.0
-    python scripts/run_evaluation.py --split spider_dev --gold_eval
+    # Sanity check: gold SQL should yield EX=1.0
+    python scripts/run_evaluation.py --eval_set data/eval_holdout.jsonl --gold_eval
 
-Output format expected in predictions.jsonl (one JSON per line):
-    {"generated_sql": "SELECT ..."}
-
-Output files (written alongside --output):
-    <base>_evaluation.json  — full per-sample results
-    <base>_summary.json  — per-model summary (merged with inference metrics)
+Output folder contains:
+    evaluation.json  — per-sample execution results
+    summary.json     — aggregate metrics merged with inference stats
 """
 
 import argparse
@@ -46,59 +37,62 @@ def load_records(split: str, data_dir: str) -> list[dict]:
         return load_spider(data_dir, split="dev", n=100)
     elif split == "spider_test":
         return load_spider(data_dir, split="test", n=100)
-    else:
-        raise ValueError(f"Unknown split: {split!r}. Choose from: spider_train, spider_dev, spider_test")
+    raise ValueError(f"Unknown split: {split!r}. Choose from: spider_train, spider_dev, spider_test")
 
 
 def load_predictions(path: str) -> list[str]:
     with open(path, encoding="utf-8") as f:
-        rows = [json.loads(line.strip()) for line in f]
-    return [r["generated_sql"] for r in rows]
+        return [json.loads(line)["generated_sql"] for line in f if line.strip()]
+
+
+def resolve_predictions(predictions_arg: str | None) -> tuple[str | None, str | None]:
+    """Return (pred_dir, pred_file) from a folder path or direct .jsonl path."""
+    if predictions_arg is None:
+        return None, None
+    if os.path.isdir(predictions_arg) or not predictions_arg.endswith(".jsonl"):
+        pred_dir = os.path.abspath(predictions_arg)
+        return pred_dir, os.path.join(pred_dir, "predictions.jsonl")
+    pred_file = os.path.abspath(predictions_arg)
+    return os.path.dirname(pred_file), pred_file
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL evaluation")
-    parser.add_argument("--model", default=None, help="Model name/ID — written to summary JSON")
-    parser.add_argument("--split", choices=["spider_train", "spider_dev", "spider_test"], default="spider_dev",
-                        help="Dataset split (default: spider_dev)")
-    parser.add_argument("--eval_set", default=None,
-                        help="Path to frozen eval JSONL (e.g. data/eval_holdout.jsonl)")
-    parser.add_argument("--data_dir", default="data/", help="Path to data/ directory")
-    parser.add_argument("--predictions", default=None, help="Path to predictions.jsonl")
-    parser.add_argument("--gold_eval", action="store_true",
-                        help="Use gold SQL as predictions (sanity check — should give EX=1.0)")
-    parser.add_argument("--log_wandb", action="store_true", help="Log results to W&B")
-    parser.add_argument("--output", default=None,
-                        help="Save results to JSON file. Defaults to <predictions>_results.json")
+    parser.add_argument("--model", default=None, help="Model name — written to summary.json")
+    parser.add_argument("--split", choices=["spider_train", "spider_dev", "spider_test"], default="spider_dev")
+    parser.add_argument("--eval_set", default=None, help="Frozen eval JSONL (e.g. data/eval_holdout.jsonl)")
+    parser.add_argument("--data_dir", default="data/")
+    parser.add_argument("--predictions", default=None, help="Predictions folder or .jsonl path")
+    parser.add_argument("--gold_eval", action="store_true", help="Use gold SQL (sanity check; expected EX=1.0)")
+    parser.add_argument("--log_wandb", action="store_true", help="Log metrics to W&B")
+    parser.add_argument("--output", default=None, help="evaluation.json path (auto-derived if omitted)")
     args = parser.parse_args()
 
     if not args.gold_eval and args.predictions is None:
         parser.error("Must provide --predictions or --gold_eval")
 
-    # Auto-derive output path into the same folder as predictions
-    if args.output is None and args.predictions is not None:
-        pred_dir = os.path.dirname(os.path.abspath(args.predictions))
+    pred_dir, pred_file = resolve_predictions(args.predictions)
+
+    if args.output is None and pred_dir is not None:
         args.output = os.path.join(pred_dir, "evaluation.json")
-        print(f"Output  : {args.output} (auto)")
 
     if args.eval_set and os.path.exists(args.eval_set):
         records = load_eval_set(args.eval_set, args.data_dir)
-        print(f"Loaded {len(records)} records from frozen eval set: {args.eval_set}")
+        print(f"Loaded {len(records)} records from {args.eval_set}")
     else:
         records = load_records(args.split, args.data_dir)
         print(f"Loaded {len(records)} records from {args.split}")
 
     if args.gold_eval:
         predicted_sqls = [r["gold_sql"] for r in records]
-        print("Mode: gold_eval (expected EX=1.0)")
     else:
-        predicted_sqls = load_predictions(args.predictions)
+        assert pred_file and os.path.exists(pred_file), f"Predictions file not found: {pred_file}"
+        predicted_sqls = load_predictions(pred_file)
         assert len(predicted_sqls) == len(records), (
             f"predictions ({len(predicted_sqls)}) != records ({len(records)})"
         )
 
     result = evaluate(records, predicted_sqls)
-
     invalid_count = sum(1 for r in result["results"] if r["invalid_sql"])
 
     print()
@@ -111,12 +105,10 @@ def main() -> None:
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
-        print(f"\nResults saved to: {args.output}")
+        print(f"\nResults → {args.output}")
 
-        # Write per-model summary, merging in inference metrics if available
-        pred_dir = os.path.dirname(os.path.abspath(args.predictions)) if args.predictions else None
-        metrics_path = os.path.join(pred_dir, "inference_metrics.json") if pred_dir else None
         inference_metrics = {}
+        metrics_path = os.path.join(pred_dir, "inference_metrics.json") if pred_dir else None
         if metrics_path and os.path.exists(metrics_path):
             with open(metrics_path, encoding="utf-8") as f:
                 inference_metrics = json.load(f)
@@ -135,7 +127,7 @@ def main() -> None:
         summary_path = os.path.join(os.path.dirname(os.path.abspath(args.output)), "summary.json")
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
-        print(f"Summary  saved to: {summary_path}")
+        print(f"Summary  → {summary_path}")
 
     if args.log_wandb:
         import yaml
@@ -144,11 +136,7 @@ def main() -> None:
         with open("configs/default.yaml") as f:
             cfg = yaml.safe_load(f)
 
-        init_run(
-            config={"split": args.split, **cfg},
-            project=cfg["wandb"]["project"],
-            name=f"eval-{args.split}",
-        )
+        init_run(config={"split": args.split, **cfg}, project=cfg["wandb"]["project"], name=f"eval-{args.split}")
         log_metrics({
             f"eval/{args.split}/execution_accuracy": result["execution_accuracy"],
             f"eval/{args.split}/n_correct": result["n_correct"],
