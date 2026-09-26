@@ -20,11 +20,14 @@ dependencies = [
     # Data
     "datasets>=3.0.0",
     "sqlglot>=23.0.0",
+    "sentence-transformers>=6.0.0",
+    "numpy>=1.24.0",
     # Experiment tracking
     "wandb>=0.18.0",
     # Config & utilities
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
+    "google-genai>=1.0.0",
 ]
 
 [project.optional-dependencies]
