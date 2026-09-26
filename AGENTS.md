@@ -20,16 +20,16 @@
 ## Project Overview
 
 **Goal:** Post-training pipeline for Text-to-SQL — Evaluation → SFT → Execution-based RL (GRPO)
-**Model:** Qwen2.5-Coder-7B-Instruct
+**Model:** Qwen2.5-Coder-3B-Instruct (selected in M2 — see `analysis/m2_comparison/summary_table.md`)
 **Datasets:** Spider (train/dev/test)
 **Eval:** Execution-based (run SQL in sandbox, compare results — not text similarity)
 **Tracking:** Weights & Biases
 
 **Milestones:**
 - M0 Foundation ✅
-- M1 Data & Eval 🔲 — reproducible evaluation pipeline
-- M2 Baseline 🔲 — benchmark 2-3 models, freeze baseline
-- M3 SFT 🔲 — LoRA fine-tuning, best checkpoint
+- M1 Data & Eval ✅ — reproducible evaluation pipeline
+- M2 Baseline ✅ — 4 models benchmarked, 3B selected, dev holdout frozen
+- M3 SFT ✅ — QLoRA r=16, 59% → 78% EX (`docs/m3_sft_report.md`)
 - M4 RL 🔲 — GRPO with execution-based reward
 - M5 Final Eval 🔲 — compare Base vs SFT vs RL, technical report
 

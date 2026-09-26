@@ -16,6 +16,7 @@ Output folder contains:
 """
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -66,6 +67,7 @@ def main() -> None:
     parser.add_argument("--gold_eval", action="store_true", help="Use gold SQL (sanity check; expected EX=1.0)")
     parser.add_argument("--log_wandb", action="store_true", help="Log metrics to W&B")
     parser.add_argument("--output", default=None, help="evaluation.json path (auto-derived if omitted)")
+    parser.add_argument("--export_errors", action="store_true", help="Export error examples to errors.csv alongside evaluation.json")
     args = parser.parse_args()
 
     if not args.gold_eval and args.predictions is None:
@@ -101,6 +103,24 @@ def main() -> None:
     print(f"  Correct            : {result['n_correct']} / {result['n_total']}")
     print(f"  Invalid SQL        : {invalid_count} / {result['n_total']}")
     print("=" * 40)
+
+    if args.export_errors:
+        errors = [r for r in result["results"] if not r["execution_accuracy"]]
+        errors_dir = os.path.dirname(os.path.abspath(args.output)) if args.output else (pred_dir or ".")
+        errors_path = os.path.join(errors_dir, "errors.csv")
+        with open(errors_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["#", "Invalid?", "DB", "Question", "Gold SQL", "Predicted SQL"])
+            for i, r in enumerate(errors, start=1):
+                writer.writerow([
+                    i,
+                    "Yes" if r["invalid_sql"] else "No",
+                    r["db_id"],
+                    r["question"],
+                    r["gold_sql"],
+                    r["generated_sql"],
+                ])
+        print(f"Errors CSV → {errors_path}  ({len(errors)} rows)")
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
