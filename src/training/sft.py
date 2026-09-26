@@ -11,17 +11,33 @@ import torch
 from datasets import Dataset
 
 
-def load_and_split(path: str, n_train: int, n_eval: int, seed: int) -> tuple[Dataset, Dataset]:
-    rows = []
+def load_jsonl(path: str) -> list[dict]:
     with open(path, encoding="utf-8") as f:
-        for line in f:
-            rows.append(json.loads(line))
+        return [json.loads(line) for line in f]
 
-    assert len(rows) >= n_train + n_eval, f"Need >= {n_train + n_eval} rows, got {len(rows)}"
 
-    rng = random.Random(seed)
-    rng.shuffle(rows)
-    return Dataset.from_list(rows[:n_train]), Dataset.from_list(rows[n_train : n_train + n_eval])
+def load_and_split(data_cfg: dict, seed: int) -> tuple[Dataset, Dataset]:
+    """
+    Load train/eval datasets from config.
+
+    Supports two modes:
+      - Separate files: data_cfg has 'train_path' and 'eval_path'
+      - Single file:    data_cfg has 'path', 'n_train', 'n_eval' (legacy)
+    """
+    if "train_path" in data_cfg:
+        train_rows = load_jsonl(data_cfg["train_path"])
+        eval_rows  = load_jsonl(data_cfg["eval_path"])
+    else:
+        rows = load_jsonl(data_cfg["path"])
+        n_train, n_eval = data_cfg["n_train"], data_cfg["n_eval"]
+        assert len(rows) >= n_train + n_eval, \
+            f"Need >= {n_train + n_eval} rows, got {len(rows)}"
+        rng = random.Random(seed)
+        rng.shuffle(rows)
+        train_rows = rows[:n_train]
+        eval_rows  = rows[n_train: n_train + n_eval]
+
+    return Dataset.from_list(train_rows), Dataset.from_list(eval_rows)
 
 
 def apply_chat_template(dataset: Dataset, tokenizer) -> Dataset:
@@ -74,9 +90,7 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         target_modules=lora_cfg["target_modules"],
     )
 
-    train_data, eval_data = load_and_split(
-        data_cfg["path"], data_cfg["n_train"], data_cfg["n_eval"], seed=training_cfg["seed"]
-    )
+    train_data, eval_data = load_and_split(data_cfg, seed=training_cfg["seed"])
     train_data = apply_chat_template(train_data, tokenizer)
     eval_data  = apply_chat_template(eval_data,  tokenizer)
 
@@ -133,3 +147,4 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         model.save_pretrained(output_cfg["dir"])
         tokenizer.save_pretrained(output_cfg["dir"])
         print(f"Adapter saved: {output_cfg['dir']}")
+
