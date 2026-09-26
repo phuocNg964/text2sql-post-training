@@ -207,10 +207,13 @@ def main() -> None:
 
     rng = random.Random(args.seed)
 
-    dev_n      = round(args.n * 0.10)
-    train_n    = args.n - dev_n
-    targeted_n = round(train_n * 0.90)
-    random_n   = train_n - targeted_n
+    # Sampling budget: 90% targeted (semantic retrieval) + 10% random
+    targeted_n = round(args.n * 0.90)
+    random_n   = args.n - targeted_n
+
+    # Train/dev split after unified sampling
+    train_n = round(args.n * 0.90)
+    dev_n   = args.n - train_n
 
     print("Top failure categories:")
     top_cats = load_top_categories(args.errors_csv)
@@ -218,10 +221,10 @@ def main() -> None:
     total_error_qs = sum(len(qs) for _, qs in top_cats)
     k              = targeted_n // total_error_qs
     per_cat_quotas = [k * len(qs) for _, qs in top_cats]
-    per_cat_quotas[-1] += targeted_n - sum(per_cat_quotas)  # absorb rounding remainder
+    per_cat_quotas[-1] += targeted_n - sum(per_cat_quotas)
 
-    print(f"\nBudget: N={args.n}  train={train_n}  dev={dev_n}  "
-          f"targeted={targeted_n}  random={random_n}  k={k}/error-q")
+    print(f"\nBudget: N={args.n}  targeted={targeted_n}  random={random_n}  k={k}/error-q")
+    print(f"Split:  train={train_n} (90%)  dev={dev_n} (10%)  -- sliced from shuffled N")
 
     pool = load_spider(args.data_dir, split="train")
     print(f"\nEmbedding {len(pool)} pool questions ...")
@@ -247,20 +250,15 @@ def main() -> None:
     print(f"  collected={len(random_collected)}/{random_n}  "
           f"validation_failures={sum(random_failures.values())} {random_failures or ''}")
 
-    train_records = [r for cat in category_results for r in cat] + random_collected
-    rng.shuffle(train_records)
-    if len(train_records) != train_n:
-        print(f"WARNING: train size {len(train_records)} != target {train_n}")
+    # Merge all N, shuffle, then split — train and dev share the same distribution
+    all_records = [r for cat in category_results for r in cat] + random_collected
+    rng.shuffle(all_records)
 
-    print(f"\n[dev]  quota={dev_n}")
-    dev_records, dev_failures = collect_random(pool, dev_n, global_seen, rng, "dev")
-    print(f"  collected={len(dev_records)}/{dev_n}  "
-          f"validation_failures={sum(dev_failures.values())} {dev_failures or ''}")
+    if len(all_records) != args.n:
+        print(f"WARNING: collected {len(all_records)} instead of {args.n}")
 
-    overlap = {(r["question"], r["db_id"]) for r in train_records} & \
-              {(r["question"], r["db_id"]) for r in dev_records}
-    if overlap:
-        print(f"ERROR: {len(overlap)} examples overlap between train and dev!")
+    train_records = all_records[:train_n]
+    dev_records   = all_records[train_n:]
 
     print(f"\nWriting {args.out_train} ...")
     written_train = write_jsonl(train_records, args.out_train)
@@ -279,4 +277,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
