@@ -4,11 +4,11 @@ run_evaluation.py — Text-to-SQL Execution Accuracy Evaluation
 Usage:
     python scripts/run_evaluation.py \\
         --model "Qwen2.5-Coder-3B-SFT" \\
-        --eval_set data/eval_holdout.jsonl \\
+        --eval_set data/dev_set.jsonl \\
         --predictions predictions/qwen2.5_coder_3b_sft
 
     # Sanity check: gold SQL should yield EX=1.0
-    python scripts/run_evaluation.py --eval_set data/eval_holdout.jsonl --gold_eval
+    python scripts/run_evaluation.py --eval_set data/dev_set.jsonl --gold_eval
 
 Output folder contains:
     evaluation.json  — per-sample execution results
@@ -61,7 +61,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL evaluation")
     parser.add_argument("--model", default=None, help="Model name — written to summary.json")
     parser.add_argument("--split", choices=["spider_train", "spider_dev", "spider_test"], default="spider_dev")
-    parser.add_argument("--eval_set", default=None, help="Frozen eval JSONL (e.g. data/eval_holdout.jsonl)")
+    parser.add_argument("--eval_set", default=None, help="Frozen eval JSONL (e.g. data/dev_set.jsonl)")
     parser.add_argument("--data_dir", default="data/")
     parser.add_argument("--predictions", default=None, help="Predictions folder or .jsonl path")
     parser.add_argument("--gold_eval", action="store_true", help="Use gold SQL (sanity check; expected EX=1.0)")

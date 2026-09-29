@@ -5,7 +5,7 @@ Usage:
     python scripts/run_inference.py \\
         --model Qwen/Qwen2.5-Coder-3B-Instruct \\
         --adapter PhuocNg9604/qwen2.5-coder-3b-text2sql-sft \\
-        --eval_set data/eval_holdout.jsonl \\
+        --eval_set data/dev_set.jsonl \\
         --output predictions/qwen2.5_coder_3b_sft
 
 Output folder contains:
