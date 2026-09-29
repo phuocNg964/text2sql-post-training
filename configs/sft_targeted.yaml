@@ -29,8 +29,8 @@ training:
   seed: 42
 
 data:
-  train_path: "data/sft_targeted_train.jsonl"   # 1080 examples (targeted curation)
-  eval_path:  "data/sft_targeted_dev.jsonl"     # 120 examples
+  train_path: "data/sft_targeted_train.jsonl"   # targeted curation
+  eval_path:  "data/sft_eval.jsonl"             # 100 examples (stratified spider_dev)
 
 output:
   dir: "checkpoints/sft_targeted"
@@ -42,4 +42,3 @@ wandb:
     - targeted
     - sft
     - semantic-retrieval
-

@@ -92,7 +92,7 @@ Adapter published to the Hugging Face Hub: `PhuocNg9604/qwen2.5-coder-3b-text2sq
 | Trainer | `src/training/sft.py`, `scripts/run_sft.py` |
 | Pre-flight checks | `scripts/sft_smoke_test.py` |
 | Dataset curation | `scripts/curate_sft_dataset.py` → `data/sft_full.jsonl` |
-| Frozen eval set | `data/eval_holdout.jsonl` |
+| Frozen eval set | `data/dev_set.jsonl` |
 | Predictions + metrics | `predictions/qwen2.5_coder_3b_sft/` |
 | Baseline predictions (3B) | `predictions/qwen2.5_coder_3b_instruct/` |
 | Labeled failure sets | `analysis/errors_3b_base_labeled.md`, `analysis/errors_3b_sft_labeled.md` |

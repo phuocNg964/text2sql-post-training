@@ -122,3 +122,17 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **Lightning AI credits budget:** ~14.97 credits total. Estimated spend M2–M5: ~$9.60. Preserve the ~$5 buffer for re-runs.
 
 **End-of-session rule (Lightning AI):** Always remind the user to `git push` before shutting down a Studio to avoid losing progress.
+
+---
+
+## 6. Code Style: Minimal & Essential
+
+**Write only the core mechanism. Nothing else.**
+
+- **Comments:** one short line per subpart of a function, describing that block's job (e.g., `# build prompt`, `# run SQL in sandbox`, `# compare result sets`). Add a longer note only for a non-obvious *why* (reward design, masking logic, tricky tensor shapes). No line-by-line narration.
+- **Docstrings:** none on trivial functions; one short line max on non-trivial ones.
+- **No filler code:** no unused params, no wrapper functions around a single call, no placeholder/TODO scaffolding.
+- **No unnecessary prints/logging.** Only add output when explicitly requested (metrics sent to W&B are the tracking channel and are fine).
+- **Explanations belong in chat, not in code.** Deep explanations for the architect (see Section 0) go in the discussion, not in comment blocks.
+
+The test: if deleting a line or comment changes neither behavior nor the reader's understanding of the core mechanism, delete it.
