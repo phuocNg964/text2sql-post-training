@@ -1,17 +1,15 @@
 """
-curate_sft_targeted.py — targeted SFT dataset via semantic retrieval.
+curate_sft_targeted.py -- targeted SFT dataset via structural AST filtering.
 
 Strategy:
-  train_n    = N                       # 100% of N goes to train
-  targeted_n = round(N * 0.90)         # 90% of train, split across top-3 failure categories
-  random_n   = N - targeted_n          # 10% of train, random fill
+  targeted_n = round(N * 0.85)     # split proportionally across all confirmed error categories
+  random_n   = N - targeted_n      # 15% anchor pool (uniform random, prevents regression)
 
-  k = targeted_n // total_error_questions   # equal examples per failure question
-  per_cat_quota[i] = k * failures_in_cat[i]
+  per_cat_quota[C] = targeted_n * (errors_in_C / total_errors)
 
-Within each category, candidates are retrieved by cosine similarity and walked
-in interleaved round-robin order so every failure question contributes ~k examples.
-Dev set is loaded from --dev_set and formatted directly to --out_eval for SFTTrainer.
+Within each category, the Spider train pool is pre-filtered by SQL AST rules that
+match the structural signature of the failure mode.  Candidates are then shuffled
+randomly (seed-controlled) and walked until the quota is filled or the pool exhausts.
 
 Usage:
     python scripts/curate_sft_targeted.py --n 1080
@@ -28,10 +26,9 @@ import io
 import json
 import os
 import random
+import re
 import sys
 from collections import defaultdict
-
-import numpy as np
 
 # Force UTF-8 on Windows to avoid cp1252 errors in print statements.
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -44,47 +41,100 @@ from src.data.loader import load_eval_set, load_spider
 from src.data.sft_formatter import format_for_sft
 from src.eval.executor import execute_sql
 
-EMBED_MODEL      = "BAAI/bge-base-en-v1.5"
-OVERSAMPLE       = 3    # neighbors retrieved per error question = ceil(k) * OVERSAMPLE
-MAX_CHARS        = int(2048 * 3.5)  # ~7168 chars; matches configs/sft.yaml token budget
-TOP_K_CATEGORIES = 3
+MAX_CHARS          = int(2048 * 3.5)  # ~7168 chars; matches configs/sft.yaml token budget
+ANCHOR_SHARE       = 0.15             # fraction of N reserved for random anchor pool
+TOP_K_CATEGORIES   = 3               # only curate for the top-K most frequent failures
 
 
-def load_top_categories(errors_csv: str) -> list[tuple[str, list[str]]]:
-    """Return top TOP_K_CATEGORIES failure categories and their questions, sorted by count desc."""
-    cat_questions: dict[str, list[str]] = defaultdict(list)
+# ---------------------------------------------------------------------------
+# AST filters -- one boolean predicate per taxonomy category.
+# Each predicate receives a record dict and returns True if the gold_sql
+# exercises that structural construct.
+# ---------------------------------------------------------------------------
+
+def _sql(rec: dict) -> str:
+    return rec["gold_sql"].upper()
+
+
+AST_FILTERS: dict[str, callable] = {
+    # Syntax errors have no valid training analogue; fall through to anchor pool.
+    "INVALID_SQL": lambda rec: False,
+
+    # Schema linking: queries spanning >=2 tables (JOIN present) OR using
+    # sub-selects that require precise column-to-table attribution.
+    "SCHEMA_LINKING": lambda rec: (
+        bool(re.search(r"\bJOIN\b", _sql(rec)))
+        or bool(re.search(r"\bIN\s*\(SELECT\b", _sql(rec)))
+    ),
+
+    # Join errors: queries with >=2 JOINs, or JOIN with explicit ON predicate.
+    "JOIN": lambda rec: (
+        len(re.findall(r"\bJOIN\b", _sql(rec))) >= 2
+        or bool(re.search(r"\bJOIN\b.+\bON\b", _sql(rec), re.DOTALL))
+    ),
+
+    # Aggregation / grouping: GROUP BY, HAVING, or aggregate functions.
+    "AGGREGATION_GROUPING": lambda rec: (
+        bool(re.search(r"\bGROUP\s+BY\b", _sql(rec)))
+        or bool(re.search(r"\bHAVING\b", _sql(rec)))
+        or bool(re.search(r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(", _sql(rec)))
+    ),
+
+    # Nesting / set ops: IN/NOT IN/EXISTS subqueries or UNION/INTERSECT/EXCEPT.
+    "NESTING_SET_OPS": lambda rec: (
+        bool(re.search(r"\b(IN|NOT\s+IN|EXISTS)\s*\(\s*SELECT\b", _sql(rec)))
+        or bool(re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", _sql(rec)))
+    ),
+
+    # Filter condition: compound WHERE clause (AND/OR, negation, BETWEEN, LIKE,
+    # inequality operators).
+    "FILTER_CONDITION": lambda rec: bool(
+        re.search(
+            r"\bWHERE\b.+\b(AND|OR|NOT|BETWEEN|LIKE|!=|<>|>=|<=)\b",
+            _sql(rec),
+            re.DOTALL,
+        )
+    ),
+
+    # Distinct / duplicates: queries that contain DISTINCT.
+    "DISTINCT_DUPLICATES": lambda rec: bool(re.search(r"\bDISTINCT\b", _sql(rec))),
+
+    # Order / limit: queries with ORDER BY and/or LIMIT.
+    "ORDER_LIMIT": lambda rec: (
+        bool(re.search(r"\bORDER\s+BY\b", _sql(rec)))
+        or bool(re.search(r"\bLIMIT\b", _sql(rec)))
+    ),
+
+    # Output shape: SELECT list with >=3 columns (exercises multi-column selection).
+    "OUTPUT_SHAPE": lambda rec: (
+        _sql(rec).startswith("SELECT")
+        and len(re.split(r",", _sql(rec).split("FROM")[0])) >= 3
+    ),
+
+    # Miscellaneous: no specific structural signature -- accept any query.
+    "MISCELLANEOUS": lambda rec: True,
+}
+
+
+# ---------------------------------------------------------------------------
+# Error category loading
+# ---------------------------------------------------------------------------
+
+def load_error_categories(errors_csv: str) -> list[tuple[str, int]]:
+    """Return all confirmed ERROR categories and their counts, sorted by count desc."""
+    counts: dict[str, int] = defaultdict(int)
     with open(errors_csv, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            cat = row["Category"].strip()
-            q   = row["Question"].strip()
-            if q:
-                cat_questions[cat].append(q)
-
-    return sorted(cat_questions.items(), key=lambda x: len(x[1]), reverse=True)[:TOP_K_CATEGORIES]
-
-
-def embed_texts(texts: list[str], batch_size: int) -> np.ndarray:
-    """Encode texts with EMBED_MODEL. Returns L2-normalised float32 array [N, D]."""
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(EMBED_MODEL)
-    return np.array(
-        model.encode(texts, batch_size=batch_size, normalize_embeddings=True, show_progress_bar=False),
-        dtype=np.float32,
-    )
+            if row["Verdict"].strip() == "ERROR":
+                cat = row["Category"].strip()
+                if cat:
+                    counts[cat] += 1
+    return sorted(counts.items(), key=lambda x: x[1], reverse=True)
 
 
-def build_ranked_lists(error_embs: np.ndarray, pool_embs: np.ndarray) -> np.ndarray:
-    """Cosine sim (already normalised) -> pool indices sorted by similarity desc. Shape [E, P]."""
-    return np.argsort(-(error_embs @ pool_embs.T), axis=1)
-
-
-def round_robin_gen(ranked_lists: np.ndarray):
-    """Yield pool indices interleaved across error questions: rank-1 of all, rank-2 of all, ..."""
-    n_errors, n_pool = ranked_lists.shape
-    for rank in range(n_pool):
-        for e in range(n_errors):
-            yield int(ranked_lists[e, rank])
-
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
 
 def validate_example(rec: dict) -> tuple[bool, str]:
     """Tier-1 checks: SQL executes, returns rows, prompt fits in token budget."""
@@ -102,34 +152,35 @@ def validate_example(rec: dict) -> tuple[bool, str]:
     return True, ""
 
 
+# ---------------------------------------------------------------------------
+# Collectors
+# ---------------------------------------------------------------------------
+
 def collect_category(
     pool: list[dict],
-    ranked_lists: np.ndarray,
+    category: str,
     quota: int,
     global_seen: set[tuple],
+    rng: random.Random,
     tag: str,
 ) -> tuple[list[dict], dict[str, int]]:
     """
-    Walk round-robin candidates and collect `quota` valid, unseen examples.
-    global_seen is updated in-place. Round-robin ensures ~equal contribution
-    per failure question.
+    Pre-filter pool with the AST rule for `category`, shuffle, then collect
+    `quota` valid, unseen examples.  global_seen is updated in-place.
     """
-    collected: list[dict]    = []
-    failures: dict[str, int] = {}
-    local_seen: set[int]     = set()
+    ast_filter = AST_FILTERS.get(category, lambda rec: True)
+    candidates = [rec for rec in pool if ast_filter(rec)]
+    rng.shuffle(candidates)
 
-    for pool_idx in round_robin_gen(ranked_lists):
+    collected: list[dict]     = []
+    failures:  dict[str, int] = {}
+
+    for rec in candidates:
         if len(collected) >= quota:
             break
-        if pool_idx in local_seen:
-            continue
-        local_seen.add(pool_idx)
-
-        rec = pool[pool_idx]
         key = (rec["question"], rec["db_id"])
         if key in global_seen:
             continue
-
         valid, reason = validate_example(rec)
         if valid:
             global_seen.add(key)
@@ -138,7 +189,10 @@ def collect_category(
             failures[reason] = failures.get(reason, 0) + 1
 
     if len(collected) < quota:
-        print(f"WARNING [{tag}]: pool exhausted, {quota - len(collected)} short")
+        print(
+            f"WARNING [{tag}]: AST pool exhausted "
+            f"({len(candidates)} candidates), {quota - len(collected)} short"
+        )
     return collected, failures
 
 
@@ -153,8 +207,8 @@ def collect_random(
     candidates = pool.copy()
     rng.shuffle(candidates)
 
-    collected: list[dict]    = []
-    failures: dict[str, int] = {}
+    collected: list[dict]     = []
+    failures:  dict[str, int] = {}
 
     for rec in candidates:
         if len(collected) >= quota:
@@ -174,6 +228,10 @@ def collect_random(
     return collected, failures
 
 
+# ---------------------------------------------------------------------------
+# JSONL writer
+# ---------------------------------------------------------------------------
+
 def write_jsonl(records: list[dict], path: str) -> int:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     written = 0
@@ -187,43 +245,63 @@ def write_jsonl(records: list[dict], path: str) -> int:
     return written
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Curate targeted SFT dataset via semantic retrieval.")
-    parser.add_argument("--n",           type=int, default=1080, help="Total training samples to curate")
-    parser.add_argument("--seed",        type=int, default=42)
-    parser.add_argument("--data_dir",    default="data")
-    parser.add_argument("--errors_csv",  default="analysis/qwen2.5_coder_3B_instruct_gpt_oss_120B/errors_analyzed.csv")
-    parser.add_argument("--dev_set",     default="data/dev_set.jsonl", help="Raw dev set to format for SFT eval")
-    parser.add_argument("--out_train",   default="data/sft_targeted_train.jsonl")
-    parser.add_argument("--out_eval",    default="data/sft_eval.jsonl")
-    parser.add_argument("--embed_batch", type=int, default=128)
+    parser = argparse.ArgumentParser(
+        description="Curate targeted SFT dataset via structural AST filtering."
+    )
+    parser.add_argument("--n",          type=int, default=1080, help="Total training samples to curate")
+    parser.add_argument("--seed",       type=int, default=42)
+    parser.add_argument("--data_dir",   default="data")
+    parser.add_argument("--errors_csv", default="analysis/qwen2.5_coder_3b_instruct/errors_analyzed.csv")
+    parser.add_argument("--dev_set",    default="data/dev_set.jsonl",
+                        help="Raw dev set to format for SFT eval")
+    parser.add_argument("--out_train",  default="data/sft_targeted_train.jsonl")
+    parser.add_argument("--out_eval",   default="data/sft_eval.jsonl")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
 
-    # 1. Curate targeted training set (90% targeted semantic retrieval, 10% random)
-    targeted_n = round(args.n * 0.90)
-    random_n   = args.n - targeted_n
+    # 1. Load error distribution (top-K only)
+    error_cats = load_error_categories(args.errors_csv)[:TOP_K_CATEGORIES]
+    if not error_cats:
+        sys.exit(f"No ERROR rows found in {args.errors_csv}. Run error_analysis_new.py first.")
 
-    top_cats = load_top_categories(args.errors_csv)
-    total_error_qs = sum(len(qs) for _, qs in top_cats)
-    k              = targeted_n // total_error_qs
-    per_cat_quotas = [k * len(qs) for _, qs in top_cats]
+    total_errors = sum(n for _, n in error_cats)
+    targeted_n   = round(args.n * (1.0 - ANCHOR_SHARE))
+    random_n     = args.n - targeted_n
+
+    # Proportional quotas; last category absorbs rounding remainder
+    per_cat_quotas = [round(targeted_n * n / total_errors) for _, n in error_cats]
     per_cat_quotas[-1] += targeted_n - sum(per_cat_quotas)
 
+    print(f"Error categories ({total_errors} total confirmed errors):")
+    for (cat, n_err), quota in zip(error_cats, per_cat_quotas):
+        print(f"  {cat:<25} errors={n_err:>3}  quota={quota:>4}  ({n_err / total_errors:.1%})")
+    print(f"  {'[anchor/random]':<25}              quota={random_n:>4}  ({ANCHOR_SHARE:.1%})")
+    print()
+
+    # 2. Load full Spider train pool once
     pool = load_spider(args.data_dir, split="train")
-    pool_embs = embed_texts([r["question"] for r in pool], args.embed_batch)
+    print(f"Spider train pool: {len(pool)} examples\n")
 
     global_seen:      set[tuple]       = set()
     category_results: list[list[dict]] = []
 
-    for cat_idx, ((cat_name, error_qs), quota) in enumerate(zip(top_cats, per_cat_quotas)):
-        error_embs   = embed_texts(error_qs, args.embed_batch)
-        ranked_lists = build_ranked_lists(error_embs, pool_embs)
-        collected, _ = collect_category(pool, ranked_lists, quota, global_seen, f"cat{cat_idx + 1}")
+    for (cat_name, _), quota in zip(error_cats, per_cat_quotas):
+        collected, failures = collect_category(pool, cat_name, quota, global_seen, rng, cat_name)
         category_results.append(collected)
+        status   = f"{len(collected)}/{quota}"
+        fail_str = f"  skipped={failures}" if failures else ""
+        print(f"  [{cat_name:<25}] collected {status}{fail_str}")
 
-    random_collected, _ = collect_random(pool, random_n, global_seen, rng, "random")
+    # 3. Anchor pool: uniform random from remaining candidates
+    random_collected, _ = collect_random(pool, random_n, global_seen, rng, "anchor")
+    print(f"  {'[anchor/random]':<27} collected {len(random_collected)}/{random_n}")
+    print()
 
     train_records = [r for cat in category_results for r in cat] + random_collected
     rng.shuffle(train_records)
@@ -234,8 +312,8 @@ def main() -> None:
     written_train = write_jsonl(train_records, args.out_train)
     print(f"Saved {written_train} records -> {args.out_train}")
 
-    # 2. Format Dev Set for SFTTrainer
-    dev_records = load_eval_set(args.dev_set, args.data_dir)
+    # 4. Format Dev Set for SFTTrainer
+    dev_records  = load_eval_set(args.dev_set, args.data_dir)
     written_eval = write_jsonl(dev_records, args.out_eval)
     print(f"Saved {written_eval} records -> {args.out_eval}")
 
