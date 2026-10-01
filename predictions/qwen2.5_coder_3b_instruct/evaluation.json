@@ -1,6 +1,6 @@
 {
-  "execution_accuracy": 0.62,
-  "n_correct": 62,
+  "execution_accuracy": 0.64,
+  "n_correct": 64,
   "n_total": 100,
   "results": [
     {
@@ -17,16 +17,16 @@
       "question": "Show names, results and bulgarian commanders of the battles with no ships lost in the 'English Channel'.",
       "db_id": "battle_death",
       "gold_sql": "SELECT name ,  RESULT ,  bulgarian_commander FROM battle EXCEPT SELECT T1.name ,  T1.result ,  T1.bulgarian_commander FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.location  =  'English Channel'",
-      "generated_sql": "SELECT T1.name, T1.result, T1.bulgarian_commander\nFROM battle AS T1\nJOIN ship AS T2 ON T1.id = T2.lost_in_battle\nWHERE T2.location != 'English Channel';",
+      "generated_sql": "SELECT T1.name, T1.result, T1.bulgarian_commander\nFROM battle AS T1\nWHERE T1.id NOT IN (\n    SELECT T2.battle_id\n    FROM ship AS T2\n    WHERE T2.location = 'English Channel'\n)",
       "execution_accuracy": false,
-      "invalid_sql": false
+      "invalid_sql": true
     },
     {
       "example_id": "",
       "question": "What are the ids and names of the battles that led to more than 10 people killed in total.",
       "db_id": "battle_death",
       "gold_sql": "SELECT T1.id ,  T1.name FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle JOIN death AS T3 ON T2.id  =  T3.caused_by_ship_id GROUP BY T1.id HAVING sum(T3.killed)  >  10",
-      "generated_sql": "SELECT b.id, b.name\nFROM battle b\nJOIN death d ON b.id = d.caused_by_ship_id\nGROUP BY b.id, b.name\nHAVING SUM(d.killed) > 10;",
+      "generated_sql": "SELECT b.id, b.name\nFROM battle b\nJOIN (\n    SELECT caused_by_ship_id\n    FROM death\n    GROUP BY caused_by_ship_id\n    HAVING SUM(killed) > 10\n) d ON b.id = d.caused_by_ship_id;",
       "execution_accuracy": false,
       "invalid_sql": false
     },
@@ -44,7 +44,7 @@
       "question": "What are the death and injury situations caused by the ship with tonnage 't'?",
       "db_id": "battle_death",
       "gold_sql": "SELECT T1.killed ,  T1.injured FROM death AS T1 JOIN ship AS t2 ON T1.caused_by_ship_id  =  T2.id WHERE T2.tonnage  =  't'",
-      "generated_sql": "SELECT d.note, d.killed, d.injured\nFROM death d\nJOIN ship s ON d.caused_by_ship_id = s.id\nWHERE s.tonnage = 't';",
+      "generated_sql": "SELECT T2.note, T2.killed, T2.injured FROM ship AS T1 INNER JOIN death AS T2 ON T1.id = T2.caused_by_ship_id WHERE T1.tonnage = 't';",
       "execution_accuracy": false,
       "invalid_sql": false
     },
@@ -53,7 +53,7 @@
       "question": "What is the average weight and year for each year?",
       "db_id": "car_1",
       "gold_sql": "SELECT avg(Weight) ,  YEAR FROM CARS_DATA GROUP BY YEAR;",
-      "generated_sql": "SELECT AVG(Weight) AS AverageWeight, YEAR FROM cars_data GROUP BY YEAR;",
+      "generated_sql": "SELECT YEAR, AVG(Weight) AS Average_Weight\nFROM cars_data\nGROUP BY YEAR;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -71,7 +71,7 @@
       "question": "Which distinctive models are produced by maker with the full name General Motors or weighing more than 3500?",
       "db_id": "car_1",
       "gold_sql": "SELECT DISTINCT T2.Model FROM CAR_NAMES AS T1 JOIN MODEL_LIST AS T2 ON T1.Model  =  T2.Model JOIN CAR_MAKERS AS T3 ON T2.Maker  =  T3.Id JOIN CARS_DATA AS T4 ON T1.MakeId  =  T4.Id WHERE T3.FullName  =  'General Motors' OR T4.weight  >  3500;",
-      "generated_sql": "SELECT DISTINCT T2.Model FROM car_makers AS T1 INNER JOIN car_names AS T2 ON T1.Id = T2.MakeId INNER JOIN cars_data AS T3 ON T2.MakeId = T3.MakeId WHERE T1.FullName = 'General Motors' OR T3.Weight > 3500;",
+      "generated_sql": "SELECT DISTINCT T2.Model \nFROM car_makers AS T1 \nJOIN car_names AS T2 ON T1.Id = T2.MakeId \nJOIN cars_data AS T3 ON T2.MakeId = T3.MakeId \nWHERE T1.FullName = 'General Motors' OR T3.Weight > 3500;",
       "execution_accuracy": false,
       "invalid_sql": true
     },
@@ -98,16 +98,16 @@
       "question": "List all song names by singers above the average age.",
       "db_id": "concert_singer",
       "gold_sql": "SELECT song_name FROM singer WHERE age  >  (SELECT avg(age) FROM singer)",
-      "generated_sql": "SELECT s.Song_Name \nFROM singer s \nJOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID \nJOIN concert c ON sic.concert_ID = c.concert_ID \nWHERE s.Age > (SELECT AVG(Age) FROM singer)",
+      "generated_sql": "SELECT T2.Song_Name FROM singer AS T1 INNER JOIN singer_in_concert AS T3 ON T1.Singer_ID = T3.Singer_ID INNER JOIN concert AS T4 ON T3.concert_ID = T4.concert_ID INNER JOIN stadium AS T5 ON T4.Stadium_ID = T5.Stadium_ID INNER JOIN singer AS T6 ON T3.Singer_ID = T6.Singer_ID WHERE T1.Age > (SELECT AVG(Age) FROM singer)",
       "execution_accuracy": false,
-      "invalid_sql": false
+      "invalid_sql": true
     },
     {
       "example_id": "",
       "question": "What are the names of the singers and number of concerts for each person?",
       "db_id": "concert_singer",
       "gold_sql": "SELECT T2.name ,  count(*) FROM singer_in_concert AS T1 JOIN singer AS T2 ON T1.singer_id  =  T2.singer_id GROUP BY T2.singer_id",
-      "generated_sql": "SELECT s.Name, COUNT(*) AS Number_of_Concerts\nFROM singer s\nJOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID\nGROUP BY s.Singer_ID, s.Name;",
+      "generated_sql": "SELECT s.Name, COUNT(*) AS Number_of_Concerts\nFROM singer s\nJOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID\nGROUP BY s.Name;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -116,7 +116,7 @@
       "question": "List all singer names in concerts in year 2014.",
       "db_id": "concert_singer",
       "gold_sql": "SELECT T2.name FROM singer_in_concert AS T1 JOIN singer AS T2 ON T1.singer_id  =  T2.singer_id JOIN concert AS T3 ON T1.concert_id  =  T3.concert_id WHERE T3.year  =  2014",
-      "generated_sql": "SELECT DISTINCT s.Name \nFROM singer s \nJOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID \nJOIN concert c ON sic.concert_ID = c.concert_ID \nWHERE c.Year = '2014';",
+      "generated_sql": "SELECT DISTINCT T3.Name \nFROM concert AS T1 \nJOIN singer_in_concert AS T2 ON T1.concert_ID = T2.concert_ID \nJOIN singer AS T3 ON T2.Singer_ID = T3.Singer_ID \nWHERE T1.Year = '2014';",
       "execution_accuracy": false,
       "invalid_sql": false
     },
@@ -125,7 +125,7 @@
       "question": "What is the name and country of origin of every singer who has a song with the word 'Hey' in its title?",
       "db_id": "concert_singer",
       "gold_sql": "SELECT name ,  country FROM singer WHERE song_name LIKE '%Hey%'",
-      "generated_sql": "SELECT s.Name, s.Country FROM singer s\nJOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID\nJOIN concert c ON sic.concert_ID = c.concert_ID\nJOIN song ON c.concert_ID = song.concert_ID\nWHERE song.Song_Name LIKE '%Hey%'",
+      "generated_sql": "SELECT s.Name, s.Country \nFROM singer s \nJOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID \nJOIN concert c ON sic.concert_ID = c.concert_ID \nJOIN song ON c.concert_ID = song.concert_ID \nWHERE song.Song_Name LIKE '%Hey%'",
       "execution_accuracy": false,
       "invalid_sql": true
     },
@@ -152,7 +152,7 @@
       "question": "What are the names of the teachers and how many courses do they teach?",
       "db_id": "course_teach",
       "gold_sql": "SELECT T2.Name ,  COUNT(*) FROM course_arrange AS T1 JOIN teacher AS T2 ON T1.Teacher_ID  =  T2.Teacher_ID GROUP BY T2.Name",
-      "generated_sql": "SELECT T.Name, COUNT(CA.Course_ID) AS NumberOfCourses\nFROM teacher AS T\nJOIN course_arrange AS CA ON T.Teacher_ID = CA.Teacher_ID\nGROUP BY T.Teacher_ID, T.Name;",
+      "generated_sql": "SELECT T2.Name, COUNT(T1.Course_ID) AS NumberOfCourses\nFROM course_arrange AS T1\nJOIN teacher AS T2 ON T1.Teacher_ID = T2.Teacher_ID\nGROUP BY T2.Name;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -179,7 +179,7 @@
       "question": "Show names of teachers and the number of courses they teach.",
       "db_id": "course_teach",
       "gold_sql": "SELECT T2.Name ,  COUNT(*) FROM course_arrange AS T1 JOIN teacher AS T2 ON T1.Teacher_ID  =  T2.Teacher_ID GROUP BY T2.Name",
-      "generated_sql": "SELECT T.Name, COUNT(CA.Course_ID) AS NumberOfCourses\nFROM teacher AS T\nJOIN course_arrange AS CA ON T.Teacher_ID = CA.Teacher_ID\nGROUP BY T.Teacher_ID, T.Name;",
+      "generated_sql": "SELECT T2.Name, COUNT(T1.Course_ID) AS NumberOfCourses\nFROM course_arrange AS T1\nJOIN teacher AS T2 ON T1.Teacher_ID = T2.Teacher_ID\nGROUP BY T2.Name;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -197,7 +197,7 @@
       "question": "What are the ids and names of each document, as well as the number of paragraphs in each?",
       "db_id": "cre_Doc_Template_Mgt",
       "gold_sql": "SELECT T1.document_id ,  T2.document_name ,  count(*) FROM Paragraphs AS T1 JOIN Documents AS T2 ON T1.document_id  =  T2.document_id GROUP BY T1.document_id",
-      "generated_sql": "SELECT D.Document_ID, D.Document_Name, COUNT(P.Paragraph_ID) AS Number_Of_Paragraphs\nFROM Documents D\nJOIN Paragraphs P ON D.Document_ID = P.Document_ID\nGROUP BY D.Document_ID, D.Document_Name;",
+      "generated_sql": "SELECT D.Document_ID, D.Document_Name, COUNT(P.Paragraph_ID) AS Paragraph_Count\nFROM Documents D\nJOIN Paragraphs P ON D.Document_ID = P.Document_ID\nGROUP BY D.Document_ID, D.Document_Name;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -215,8 +215,8 @@
       "question": "Return the names and template ids for documents that contain the letter w in their description.",
       "db_id": "cre_Doc_Template_Mgt",
       "gold_sql": "SELECT document_name ,  template_id FROM Documents WHERE Document_Description LIKE \"%w%\"",
-      "generated_sql": "SELECT D.Document_Name, D.Template_ID\nFROM Documents D\nWHERE D.Document_Description LIKE '%w%';",
-      "execution_accuracy": true,
+      "generated_sql": "SELECT D.Document_Name, D.Document_ID\nFROM Documents D\nWHERE D.Document_Description LIKE '%w%';",
+      "execution_accuracy": false,
       "invalid_sql": false
     },
     {
@@ -233,7 +233,7 @@
       "question": "List the emails of the professionals who live in the state of Hawaii or the state of Wisconsin.",
       "db_id": "dog_kennels",
       "gold_sql": "SELECT email_address FROM Professionals WHERE state  =  'Hawaii' OR state  =  'Wisconsin'",
-      "generated_sql": "SELECT T3.email_address FROM Professionals AS T1 INNER JOIN Addresses AS T2 ON T1.professional_id = T2.professional_id INNER JOIN States AS T3 ON T2.state_code = T3.state_code WHERE T3.state_name IN ('Hawaii', 'Wisconsin');",
+      "generated_sql": "SELECT T3.email_address FROM Professionals AS T1 INNER JOIN Owners AS T2 ON T1.professional_id = T2.owner_id INNER JOIN Sizes AS T3 ON T2.size_code = T3.size_code WHERE T2.state IN ('Hawaii', 'Wisconsin');",
       "execution_accuracy": false,
       "invalid_sql": true
     },
@@ -251,7 +251,7 @@
       "question": "What are each professional's first name and description of the treatment they have performed?",
       "db_id": "dog_kennels",
       "gold_sql": "SELECT DISTINCT T1.first_name ,  T3.treatment_type_description FROM professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id JOIN Treatment_types AS T3 ON T2.treatment_type_code  =  T3.treatment_type_code",
-      "generated_sql": "SELECT T3.first_name, T4.treatment_type_description FROM Treatments AS T1 INNER JOIN Professionals AS T2 ON T1.professional_id = T2.professional_id INNER JOIN Treatment_Types AS T4 ON T1.treatment_type_code = T4.treatment_type_code INNER JOIN Dogs AS T5 ON T1.dog_id = T5.dog_id;",
+      "generated_sql": "SELECT T3.first_name, T4.treatment_type_description FROM Treatments AS T1 INNER JOIN Professionals AS T2 ON T1.professional_id = T2.professional_id INNER JOIN Treatment_Types AS T4 ON T1.treatment_type_code = T4.treatment_type_code;",
       "execution_accuracy": false,
       "invalid_sql": true
     },
@@ -278,7 +278,7 @@
       "question": "What is the number of employees from each city?",
       "db_id": "employee_hire_evaluation",
       "gold_sql": "SELECT count(*) ,  city FROM employee GROUP BY city",
-      "generated_sql": "SELECT City, COUNT(*) AS Employee_Count\nFROM employee\nGROUP BY City;",
+      "generated_sql": "SELECT City, COUNT(*) AS Number_of_Employees\nFROM employee\nGROUP BY City;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -305,9 +305,9 @@
       "question": "For each shop, return the number of employees working there and the name of the shop.",
       "db_id": "employee_hire_evaluation",
       "gold_sql": "SELECT count(*) ,  t2.name FROM hiring AS t1 JOIN shop AS t2 ON t1.shop_id  =  t2.shop_id GROUP BY t2.name",
-      "generated_sql": "SELECT s.Name, COUNT(e.Employee_ID) AS Number_of_Employees\nFROM shop s\nJOIN hiring h ON s.Shop_ID = h.Shop_ID\nGROUP BY s.Shop_ID, s.Name;",
-      "execution_accuracy": false,
-      "invalid_sql": true
+      "generated_sql": "SELECT s.Name, COUNT(e.Employee_ID) AS Number_of_Employees\nFROM shop s\nJOIN hiring h ON s.Shop_ID = h.Shop_ID\nJOIN employee e ON h.Employee_ID = e.Employee_ID\nGROUP BY s.Name;",
+      "execution_accuracy": true,
+      "invalid_sql": false
     },
     {
       "example_id": "",
@@ -332,7 +332,7 @@
       "question": "What are flight numbers of flights arriving at City \"Aberdeen\"?",
       "db_id": "flight_2",
       "gold_sql": "SELECT T1.FlightNo FROM FLIGHTS AS T1 JOIN AIRPORTS AS T2 ON T1.DestAirport   =  T2.AirportCode WHERE T2.City  =  \"Aberdeen\"",
-      "generated_sql": "SELECT f.FlightNo FROM flights f JOIN airports a ON f.DestAirport = a.AirportCode WHERE a.City = 'Aberdeen';",
+      "generated_sql": "SELECT T2.FlightNo FROM airports AS T1 INNER JOIN flights AS T2 ON T1.AirportCode = T2.DestAirport WHERE T1.City = 'Aberdeen';",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -341,7 +341,7 @@
       "question": "Find all airlines that have flights from airport 'CVO' but not from 'APG'.",
       "db_id": "flight_2",
       "gold_sql": "SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"CVO\" EXCEPT SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline WHERE T2.SourceAirport  =  \"APG\"",
-      "generated_sql": "SELECT DISTINCT A.Airline \nFROM airlines A \nJOIN flights F ON A.uid = F.Airline \nWHERE F.SourceAirport = 'CVO' \nEXCEPT \nSELECT DISTINCT A.Airline \nFROM airlines A \nJOIN flights F ON A.uid = F.Airline \nWHERE F.SourceAirport = 'APG';",
+      "generated_sql": "SELECT DISTINCT T1.Airline\nFROM airlines AS T1\nJOIN flights AS T2 ON T1.uid = T2.Airline\nWHERE T2.SourceAirport = 'CVO'\n  AND T2.DestAirport != 'APG';",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -350,7 +350,7 @@
       "question": "Which city and country is the Alton airport at?",
       "db_id": "flight_2",
       "gold_sql": "SELECT City ,  Country FROM AIRPORTS WHERE AirportName  =  \"Alton\"",
-      "generated_sql": "SELECT T2.City, T2.Country FROM airports AS T1 INNER JOIN airlines AS T3 ON T1.AirportCode = T3.Abbreviation WHERE T1.AirportName = 'Alton';",
+      "generated_sql": "SELECT T2.City, T2.Country FROM airports AS T1 INNER JOIN airlines AS T2 ON T1.AirportCode = T2.uid WHERE T1.AirportName = 'Alton'",
       "execution_accuracy": false,
       "invalid_sql": true
     },
@@ -377,7 +377,7 @@
       "question": "find the id, name and age for visitors who visited some museums more than once.",
       "db_id": "museum_visit",
       "gold_sql": "SELECT t1.id ,  t1.name ,  t1.age FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id GROUP BY t1.id HAVING count(*)  >  1",
-      "generated_sql": "SELECT v.ID, v.Name, v.Age\nFROM visitor v\nJOIN visit vi ON v.ID = vi.visitor_ID\nGROUP BY v.ID, v.Name, v.Age\nHAVING COUNT(DISTINCT vi.Museum_ID) > 1;",
+      "generated_sql": "SELECT v.ID, v.Name, v.Age\nFROM visitor v\nJOIN (\n    SELECT visitor_ID\n    FROM visit\n    GROUP BY visitor_ID\n    HAVING COUNT(Museum_ID) > 1\n) AS frequent_visitors ON v.ID = frequent_visitors.visitor_ID;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -386,7 +386,7 @@
       "question": "What is the name of the visitor who visited both a museum opened before 2009 and a museum opened after 2011?",
       "db_id": "museum_visit",
       "gold_sql": "SELECT t1.name FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id JOIN museum AS t3 ON t3.Museum_ID  =  t2.Museum_ID WHERE t3.open_year  <  2009 INTERSECT SELECT t1.name FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id JOIN museum AS t3 ON t3.Museum_ID  =  t2.Museum_ID WHERE t3.open_year  >  2011",
-      "generated_sql": "SELECT v.Name\nFROM visitor v\nJOIN visit vi ON v.ID = vi.visitor_ID\nJOIN museum m ON vi.Museum_ID = m.Museum_ID\nWHERE m.Open_Year < '2009' OR m.Open_Year > '2011'\nGROUP BY v.Name\nHAVING COUNT(DISTINCT m.Museum_ID) = 2;",
+      "generated_sql": "SELECT v.Name\nFROM visitor v\nJOIN visit vi ON v.ID = vi.visitor_ID\nJOIN museum m ON vi.Museum_ID = m.Museum_ID\nWHERE m.Open_Year < '2009' OR m.Open_Year > '2011'\nGROUP BY v.ID\nHAVING COUNT(DISTINCT m.Museum_ID) = 2;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -395,7 +395,7 @@
       "question": "Find the id and name of the museum that has the most staff members?",
       "db_id": "museum_visit",
       "gold_sql": "SELECT museum_id ,  name FROM museum ORDER BY num_of_staff DESC LIMIT 1",
-      "generated_sql": "SELECT Museum_ID, Name FROM museum ORDER BY Num_of_Staff DESC LIMIT 1;",
+      "generated_sql": "SELECT m.Museum_ID, m.Name\nFROM museum m\nORDER BY m.Num_of_Staff DESC\nLIMIT 1;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -404,7 +404,7 @@
       "question": "What are the id and name of the museum visited most times?",
       "db_id": "museum_visit",
       "gold_sql": "SELECT t2.Museum_ID ,  t1.name FROM museum AS t1 JOIN visit AS t2 ON t1.Museum_ID  =  t2.Museum_ID GROUP BY t2.Museum_ID ORDER BY count(*) DESC LIMIT 1",
-      "generated_sql": "SELECT m.Museum_ID, m.Name\nFROM museum m\nJOIN (\n    SELECT Museum_ID, COUNT(*) AS Visit_Count\n    FROM visit\n    GROUP BY Museum_ID\n    ORDER BY Visit_Count DESC\n    LIMIT 1\n) v ON m.Museum_ID = v.Museum_ID;",
+      "generated_sql": "SELECT m.Museum_ID, m.Name\nFROM museum m\nJOIN (\n    SELECT Museum_ID, COUNT(*) AS Visit_Count\n    FROM visit\n    GROUP BY Museum_ID\n) v ON m.Museum_ID = v.Museum_ID\nORDER BY Visit_Count DESC\nLIMIT 1;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -422,7 +422,7 @@
       "question": "Show the names of high school students and their corresponding number of friends.",
       "db_id": "network_1",
       "gold_sql": "SELECT T2.name ,  count(*) FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id GROUP BY T1.student_id",
-      "generated_sql": "SELECT H.name, COUNT(F.friend_id) AS num_friends\nFROM Highschooler H\nJOIN Friend F ON H.ID = F.student_id\nGROUP BY H.name;",
+      "generated_sql": "SELECT T2.name, COUNT(T1.friend_id) AS num_friends\nFROM Friend AS T1\nJOIN Highschooler AS T2 ON T1.friend_id = T2.ID\nGROUP BY T2.name;",
       "execution_accuracy": false,
       "invalid_sql": false
     },
@@ -431,16 +431,16 @@
       "question": "What are the names of high schoolers who both have friends and are liked?",
       "db_id": "network_1",
       "gold_sql": "SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id",
-      "generated_sql": "SELECT DISTINCT T3.name \nFROM Friend AS T1 \nJOIN Highschooler AS T2 ON T1.friend_id = T2.ID \nJOIN Likes AS T3 ON T1.student_id = T3.student_id \nWHERE T2.name IN (\n    SELECT T4.name \n    FROM Friend AS T5 \n    JOIN Highschooler AS T6 ON T5.student_id = T6.ID \n    WHERE T6.name IN (\n        SELECT T7.name \n        FROM Likes AS T8 \n        JOIN Highschooler AS T9 ON T8.liked_id = T9.ID \n        GROUP BY T9.name \n        HAVING COUNT(T8.student_id) > 0\n    )\n)",
+      "generated_sql": "SELECT DISTINCT T1.name \nFROM Highschooler AS T1 \nJOIN Friend AS T2 ON T1.ID = T2.student_id \nJOIN Likes AS T3 ON T1.ID = T3.student_id;",
       "execution_accuracy": false,
-      "invalid_sql": true
+      "invalid_sql": false
     },
     {
       "example_id": "",
       "question": "Count the number of likes for each student id.",
       "db_id": "network_1",
       "gold_sql": "SELECT student_id ,  count(*) FROM Likes GROUP BY student_id",
-      "generated_sql": "SELECT student_id, COUNT(*) AS like_count\nFROM Likes\nGROUP BY student_id;",
+      "generated_sql": "SELECT student_id, COUNT(*) AS num_likes\nFROM Likes\nGROUP BY student_id;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -449,7 +449,7 @@
       "question": "Show the names of students who have a grade higher than 5 and have at least 2 friends.",
       "db_id": "network_1",
       "gold_sql": "SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id WHERE T2.grade  >  5 GROUP BY T1.student_id HAVING count(*)  >=  2",
-      "generated_sql": "SELECT DISTINCT T1.name \nFROM Highschooler AS T1 \nJOIN Friend AS T2 ON T1.ID = T2.student_id \nWHERE T1.grade > 5 \nGROUP BY T1.name \nHAVING COUNT(T2.friend_id) >= 2;",
+      "generated_sql": "SELECT DISTINCT T1.name\nFROM Highschooler AS T1\nJOIN Friend AS T2 ON T1.ID = T2.student_id\nWHERE T1.grade > 5\nGROUP BY T1.ID\nHAVING COUNT(T2.friend_id) >= 2;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -467,7 +467,7 @@
       "question": "Show the names of conductors and the orchestras they have conducted.",
       "db_id": "orchestra",
       "gold_sql": "SELECT T1.Name ,  T2.Orchestra FROM conductor AS T1 JOIN orchestra AS T2 ON T1.Conductor_ID  =  T2.Conductor_ID",
-      "generated_sql": "SELECT c.Name, o.Orchestra \nFROM conductor c \nJOIN orchestra o ON c.Conductor_ID = o.Conductor_ID;",
+      "generated_sql": "SELECT c.Name, o.Orchestra\nFROM conductor c\nJOIN orchestra o ON c.Conductor_ID = o.Conductor_ID;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -476,7 +476,7 @@
       "question": "Please show the different record companies and the corresponding number of orchestras.",
       "db_id": "orchestra",
       "gold_sql": "SELECT Record_Company ,  COUNT(*) FROM orchestra GROUP BY Record_Company",
-      "generated_sql": "SELECT Record_Company, COUNT(*) AS Number_of_Orchestras\nFROM orchestra\nGROUP BY Record_Company;",
+      "generated_sql": "SELECT Record_Company, COUNT(*) AS Number_of_Operations\nFROM orchestra\nGROUP BY Record_Company;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -503,16 +503,16 @@
       "question": "Find the average and maximum age for each type of pet.",
       "db_id": "pets_1",
       "gold_sql": "SELECT avg(pet_age) ,  max(pet_age) ,  pettype FROM pets GROUP BY pettype",
-      "generated_sql": "SELECT p.PetType, AVG(s.Age) AS AverageAge, MAX(s.Age) AS MaxAge\nFROM Has_Pet hp\nJOIN Student s ON hp.StuID = s.StuID\nJOIN Pets p ON hp.PetID = p.PetID\nGROUP BY p.PetType;",
+      "generated_sql": "SELECT p.PetType, AVG(s.Age) AS AverageAge, MAX(s.Age) AS MaxAge\nFROM Students s\nJOIN Has_Pet hp ON s.StuID = hp.StuID\nJOIN Pets p ON hp.PetID = p.PetID\nGROUP BY p.PetType;",
       "execution_accuracy": false,
-      "invalid_sql": false
+      "invalid_sql": true
     },
     {
       "example_id": "",
       "question": "How many pets are owned by students that have an age greater than 20?",
       "db_id": "pets_1",
       "gold_sql": "SELECT count(*) FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid WHERE T1.age  >  20",
-      "generated_sql": "SELECT COUNT(PetID) FROM Has_Pet WHERE StuID IN (SELECT StuID FROM Student WHERE Age > 20)",
+      "generated_sql": "SELECT COUNT(PetID) FROM Has_Pet WHERE StuID IN (\n    SELECT StuID FROM Student WHERE Age > 20\n)",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -521,8 +521,8 @@
       "question": "What is the last name of the student who has a cat that is 3 years old?",
       "db_id": "pets_1",
       "gold_sql": "SELECT T1.lname FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pet_age  =  3 AND T3.pettype  =  'cat'",
-      "generated_sql": "SELECT T2.LName FROM Has_Pet AS T1 INNER JOIN Student AS T2 ON T1.StuID = T2.StuID INNER JOIN Pets AS T3 ON T1.PetID = T3.PetID WHERE T3.PetType = 'cat' AND T3.pet_age = 3;",
-      "execution_accuracy": true,
+      "generated_sql": "SELECT T2.LName FROM Has_Pet AS T1 INNER JOIN Student AS T2 ON T1.StuID = T2.StuID INNER JOIN Pets AS T3 ON T1.PetID = T3.PetID WHERE T3.PetType = 'Cat' AND T3.pet_age = 3;",
+      "execution_accuracy": false,
       "invalid_sql": false
     },
     {
@@ -548,9 +548,9 @@
       "question": "What is the money rank of the poker player with the highest earnings?",
       "db_id": "poker_player",
       "gold_sql": "SELECT Money_Rank FROM poker_player ORDER BY Earnings DESC LIMIT 1",
-      "generated_sql": "SELECT Money_Rank FROM poker_player ORDER BY Earnings DESC LIMIT 1;",
-      "execution_accuracy": true,
-      "invalid_sql": false
+      "generated_sql": "SELECT T2.Money_Rank FROM poker_player AS T1 INNER JOIN people AS T2 ON T1.People_ID = T2.People_ID ORDER BY T1.Earnings DESC LIMIT 1;",
+      "execution_accuracy": false,
+      "invalid_sql": true
     },
     {
       "example_id": "",
@@ -593,7 +593,7 @@
       "question": "What are the names of properties that are either houses or apartments with more than 1 room?",
       "db_id": "real_estate_properties",
       "gold_sql": "SELECT property_name FROM Properties WHERE property_type_code  =  \"House\" UNION SELECT property_name FROM Properties WHERE property_type_code  =  \"Apartment\" AND room_count  >  1",
-      "generated_sql": "SELECT p.property_name \nFROM Properties p \nJOIN Ref_Property_Types pt ON p.property_type_code = pt.property_type_code \nWHERE pt.property_type_description IN ('House', 'Apartment') AND p.room_count > 1;",
+      "generated_sql": "SELECT p.property_name \nFROM Properties p \nJOIN Other_Property_Features opf ON p.property_id = opf.property_id \nJOIN Other_Available_Features oa ON opf.feature_id = oa.feature_id \nJOIN Ref_Property_Types rpt ON p.property_type_code = rpt.property_type_code \nWHERE (rpt.property_type_description = 'House' OR rpt.property_type_description = 'Apartment') AND p.room_count > 1;",
       "execution_accuracy": false,
       "invalid_sql": false
     },
@@ -611,7 +611,7 @@
       "question": "How many available features are there in total?",
       "db_id": "real_estate_properties",
       "gold_sql": "SELECT count(*) FROM Other_Available_Features",
-      "generated_sql": "SELECT COUNT(DISTINCT feature_id) FROM Other_Available_Features;",
+      "generated_sql": "SELECT COUNT(*) FROM Other_Available_Features",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -620,9 +620,9 @@
       "question": "Show the property type descriptions of properties belonging to that code.",
       "db_id": "real_estate_properties",
       "gold_sql": "SELECT T2.property_type_description FROM Properties AS T1 JOIN Ref_Property_Types AS T2 ON T1.property_type_code  =  T2.property_type_code GROUP BY T1.property_type_code",
-      "generated_sql": "SELECT T2.property_type_description FROM Properties AS T1 INNER JOIN Ref_Property_Types AS T2 ON T1.property_type_code = T2.property_type_code WHERE T1.property_type_code = 'SINGLE_FAMILY';",
+      "generated_sql": "SELECT T2.property_type_description FROM Other_Property_Features AS T1 INNER JOIN Ref_Property_Types AS T2 ON T1.property_type_code = T2.property_type_code WHERE T1.property_id = 1;",
       "execution_accuracy": false,
-      "invalid_sql": false
+      "invalid_sql": true
     },
     {
       "example_id": "",
@@ -656,9 +656,9 @@
       "question": "Show the names of singers and the total sales of their songs.",
       "db_id": "singer",
       "gold_sql": "SELECT T1.Name ,  sum(T2.Sales) FROM singer AS T1 JOIN song AS T2 ON T1.Singer_ID  =  T2.Singer_ID GROUP BY T1.Name",
-      "generated_sql": "SELECT s.Name, SUM(s.Sales) AS Total_Sales\nFROM singer s\nJOIN song ON s.Singer_ID = song.Singer_ID\nGROUP BY s.Name;",
-      "execution_accuracy": false,
-      "invalid_sql": true
+      "generated_sql": "SELECT s.Name, SUM(s2.Sales) AS Total_Sales\nFROM singer s\nJOIN song s2 ON s.Singer_ID = s2.Singer_ID\nGROUP BY s.Name;",
+      "execution_accuracy": true,
+      "invalid_sql": false
     },
     {
       "example_id": "",
@@ -674,7 +674,7 @@
       "question": "What is the phone number of the man with the first name Timmothy and the last name Ward?",
       "db_id": "student_transcripts_tracking",
       "gold_sql": "SELECT cell_mobile_number FROM Students WHERE first_name  =  'Timmothy' AND last_name  =  'Ward'",
-      "generated_sql": "SELECT T1.cell_mobile_number FROM Students AS T1 INNER JOIN Addresses AS T2 ON T1.current_address_id = T2.address_id WHERE T1.first_name = 'Timmothy' AND T1.last_name = 'Ward';",
+      "generated_sql": "SELECT T1.cell_mobile_number FROM Students AS T1 INNER JOIN Addresses AS T2 ON T1.permanent_address_id = T2.address_id WHERE T1.first_name = 'Timmothy' AND T1.last_name = 'Ward'",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -683,7 +683,7 @@
       "question": "What's the name of the course with most number of enrollments?",
       "db_id": "student_transcripts_tracking",
       "gold_sql": "SELECT  T1.course_name FROM Courses AS T1 JOIN Student_Enrolment_Courses AS T2 ON T1.course_id  =  T2.course_id GROUP BY T1.course_name ORDER BY count(*) DESC LIMIT 1",
-      "generated_sql": "SELECT c.course_name\nFROM Courses c\nJOIN Student_Enrolment_courses sec ON c.course_id = sec.course_id\nGROUP BY c.course_name\nORDER BY COUNT(sec.student_course_id) DESC\nLIMIT 1;",
+      "generated_sql": "SELECT c.course_name\nFROM Courses c\nJOIN Student_Enrolment_Courses sec ON c.course_id = sec.course_id\nGROUP BY c.course_name\nORDER BY COUNT(sec.student_course_id) DESC\nLIMIT 1;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -728,16 +728,16 @@
       "question": "What is the episode for the TV series named \"Sky Radio\"?",
       "db_id": "tvshow",
       "gold_sql": "SELECT T2.Episode FROM TV_Channel AS T1 JOIN TV_series AS T2 ON T1.id = T2.Channel WHERE T1.series_name = \"Sky Radio\";",
-      "generated_sql": "SELECT Episode FROM TV_series WHERE series_name = 'Sky Radio';",
-      "execution_accuracy": false,
-      "invalid_sql": true
+      "generated_sql": "SELECT T2.Episode FROM TV_Channel AS T1 INNER JOIN TV_series AS T2 ON T1.id = T2.Channel WHERE T1.series_name = 'Sky Radio';",
+      "execution_accuracy": true,
+      "invalid_sql": false
     },
     {
       "example_id": "",
       "question": "Find the series name and country of the tv channel that is playing some cartoons directed by Ben Jones and Michael Chang?",
       "db_id": "tvshow",
       "gold_sql": "SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'",
-      "generated_sql": "SELECT T2.series_name, T2.Country \nFROM Cartoon AS T1 \nJOIN TV_Channel AS T2 ON T1.Channel = T2.id \nWHERE T1.Directed_by IN ('Ben Jones', 'Michael Chang');",
+      "generated_sql": "SELECT T2.series_name, T2.Country \nFROM Cartoon AS T1 \nJOIN TV_Channel AS T2 ON T1.Channel = T2.id \nWHERE T1.Directed_by = 'Ben Jones' AND T1.Directed_by = 'Michael Chang';",
       "execution_accuracy": false,
       "invalid_sql": false
     },
@@ -764,7 +764,7 @@
       "question": "What is last date created of votes from the state 'CA'?",
       "db_id": "voter_1",
       "gold_sql": "SELECT max(created) FROM votes WHERE state  =  'CA'",
-      "generated_sql": "SELECT MAX(created) AS last_date_created FROM VOTES WHERE state = 'CA';",
+      "generated_sql": "SELECT MAX(created) FROM VOTES WHERE state = 'CA';",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -773,8 +773,8 @@
       "question": "What is the area code in which the most voters voted?",
       "db_id": "voter_1",
       "gold_sql": "SELECT T1.area_code FROM area_code_state AS T1 JOIN votes AS T2 ON T1.state  =  T2.state GROUP BY T1.area_code ORDER BY count(*) DESC LIMIT 1",
-      "generated_sql": "SELECT area_code FROM AREA_CODE_STATE WHERE state = \n(SELECT state FROM VOTES GROUP BY state ORDER BY COUNT(*) DESC LIMIT 1)",
-      "execution_accuracy": false,
+      "generated_sql": "SELECT T1.area_code FROM AREA_CODE_STATE AS T1 INNER JOIN VOTES AS T2 ON T1.state = T2.state GROUP BY T1.area_code ORDER BY COUNT(T2.vote_id) DESC LIMIT 1;",
+      "execution_accuracy": true,
       "invalid_sql": false
     },
     {
@@ -782,17 +782,17 @@
       "question": "List the area codes in which voters voted both for the contestant 'Tabatha Gehling' and the contestant 'Kelly Clauss'.",
       "db_id": "voter_1",
       "gold_sql": "SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss'",
-      "generated_sql": "SELECT DISTINCT T1.area_code \nFROM AREA_CODE_STATE AS T1 \nJOIN VOTES AS T2 ON T1.state = T2.state \nWHERE T2.contestant_number IN (\n    SELECT contestant_number \n    FROM CONTESTANTS \n    WHERE contestant_name = 'Tabatha Gehling'\n) \nAND T2.contestant_number IN (\n    SELECT contestant_number \n    FROM CONTESTANTS \n    WHERE contestant_name = 'Kelly Clauss'\n);",
+      "generated_sql": "SELECT DISTINCT T1.area_code\nFROM AREA_CODE_STATE AS T1\nJOIN VOTES AS T2 ON T1.state = T2.state\nWHERE T2.contestant_number IN (\n    SELECT contestant_number\n    FROM VOTES\n    WHERE contestant_name = 'Tabatha Gehling'\n) AND T2.contestant_number IN (\n    SELECT contestant_number\n    FROM VOTES\n    WHERE contestant_name = 'Kelly Clauss'\n);",
       "execution_accuracy": false,
-      "invalid_sql": false
+      "invalid_sql": true
     },
     {
       "example_id": "",
       "question": "What are the names of the contestants whose names are not 'Jessie Alloway'",
       "db_id": "voter_1",
       "gold_sql": "SELECT contestant_name FROM contestants WHERE contestant_name != 'Jessie Alloway'",
-      "generated_sql": "SELECT contestant_name FROM contestants WHERE contestant_name != 'Jessie Alloway'",
-      "execution_accuracy": true,
+      "generated_sql": "SELECT DISTINCT T2.contestant_name FROM VOTES AS T1 INNER JOIN CONTESTANTS AS T2 ON T1.contestant_number = T2.contestant_number WHERE T2.contestant_name != 'Jessie Alloway'",
+      "execution_accuracy": false,
       "invalid_sql": false
     },
     {
@@ -800,7 +800,7 @@
       "question": "What are the create dates, states, and phone numbers of the votes that were for the contestant named 'Tabatha Gehling'?",
       "db_id": "voter_1",
       "gold_sql": "SELECT T2.created ,  T2.state ,  T2.phone_number FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number WHERE T1.contestant_name  =  'Tabatha Gehling'",
-      "generated_sql": "SELECT T3.created, T3.state, T3.phone_number FROM CONTESTANTS AS T1 INNER JOIN VOTES AS T2 ON T1.contestant_number = T2.contestant_number INNER JOIN AREA_CODE_STATE AS T3 ON T2.state = T3.state WHERE T1.contestant_name = 'Tabatha Gehling';",
+      "generated_sql": "SELECT T3.created, T1.state, T2.phone_number \nFROM CONTESTANTS AS T1 \nJOIN VOTES AS T2 ON T1.contestant_number = T2.contestant_number \nJOIN AREA_CODE_STATE AS T3 ON T2.state = T3.state \nWHERE T1.contestant_name = 'Tabatha Gehling';",
       "execution_accuracy": false,
       "invalid_sql": true
     },
@@ -809,16 +809,16 @@
       "question": "What are the African countries that have a  population less than any country in Asia?",
       "db_id": "world_1",
       "gold_sql": "SELECT Name FROM country WHERE Continent  =  \"Africa\"  AND population  <  (SELECT max(population) FROM country WHERE Continent  =  \"Asia\")",
-      "generated_sql": "SELECT T2.Name FROM country AS T1 INNER JOIN city AS T3 ON T1.Code = T3.CountryCode INNER JOIN countrylanguage AS T4 ON T1.Code = T4.CountryCode WHERE T1.Continent = 'Africa' AND T1.Population < ( SELECT MIN(Population) FROM country WHERE Continent = 'Asia' )",
+      "generated_sql": "SELECT T2.Name FROM country AS T1 INNER JOIN city AS T2 ON T1.Code = T2.CountryCode WHERE T1.Continent = 'Africa' AND T1.Population < ( SELECT MIN(Population) FROM country WHERE Continent = 'Asia' )",
       "execution_accuracy": false,
-      "invalid_sql": true
+      "invalid_sql": false
     },
     {
       "example_id": "",
       "question": "How many official languages does Afghanistan have?",
       "db_id": "world_1",
       "gold_sql": "SELECT COUNT(*) FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T1.Name  =  \"Afghanistan\" AND IsOfficial  =  \"T\"",
-      "generated_sql": "SELECT COUNT(*) FROM countrylanguage WHERE CountryCode = 'AFG' AND IsOfficial = 'T';",
+      "generated_sql": "SELECT COUNT(*) FROM countrylanguage WHERE CountryCode = 'AFG' AND IsOfficial = 'T'",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -827,8 +827,8 @@
       "question": "What are the names of nations where both English and French are official languages?",
       "db_id": "world_1",
       "gold_sql": "SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"English\" AND T2.IsOfficial  =  \"T\" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  \"French\" AND T2.IsOfficial  =  \"T\"",
-      "generated_sql": "SELECT T2.Name FROM countrylanguage AS T1 INNER JOIN country AS T2 ON T1.CountryCode = T2.Code WHERE T1.Language = 'English' INTERSECT SELECT T2.Name FROM countrylanguage AS T1 INNER JOIN country AS T2 ON T1.CountryCode = T2.Code WHERE T1.Language = 'French'",
-      "execution_accuracy": false,
+      "generated_sql": "SELECT T2.Name FROM countrylanguage AS T1 INNER JOIN country AS T2 ON T1.CountryCode = T2.Code WHERE T1.Language = 'English' AND T1.IsOfficial = 'T' INTERSECT SELECT T2.Name FROM countrylanguage AS T1 INNER JOIN country AS T2 ON T1.CountryCode = T2.Code WHERE T1.Language = 'French' AND T1.IsOfficial = 'T'",
+      "execution_accuracy": true,
       "invalid_sql": false
     },
     {
@@ -845,7 +845,7 @@
       "question": "Return the country name and the numbers of languages spoken for each country that speaks at least 3 languages.",
       "db_id": "world_1",
       "gold_sql": "SELECT COUNT(T2.Language) ,  T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode GROUP BY T1.Name HAVING COUNT(*)  >  2",
-      "generated_sql": "SELECT T2.Name, COUNT(T1.Language) AS NumberOfLanguages\nFROM countrylanguage AS T1\nJOIN country AS T2 ON T1.CountryCode = T2.Code\nGROUP BY T1.CountryCode\nHAVING COUNT(T1.Language) >= 3;",
+      "generated_sql": "SELECT T2.Name, COUNT(T1.Language) AS NumberOfLanguages\nFROM countrylanguage AS T1\nJOIN country AS T2 ON T1.CountryCode = T2.Code\nGROUP BY T2.Name\nHAVING COUNT(T1.Language) >= 3;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -854,8 +854,8 @@
       "question": "List the first name and birth date of all players from the country with code USA.",
       "db_id": "wta_1",
       "gold_sql": "SELECT first_name ,  birth_date FROM players WHERE country_code  =  'USA'",
-      "generated_sql": "SELECT p.first_name, p.birth_date\nFROM players p\nJOIN rankings r ON p.player_id = r.player_id\nWHERE p.country_code = 'USA';",
-      "execution_accuracy": false,
+      "generated_sql": "SELECT first_name, birth_date FROM players WHERE country_code = 'USA';",
+      "execution_accuracy": true,
       "invalid_sql": false
     },
     {
@@ -872,7 +872,7 @@
       "question": "What are the country code and first name of the players who won in both tourney WTA Championships and Australian Open?",
       "db_id": "wta_1",
       "gold_sql": "SELECT T1.country_code ,  T1.first_name FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id WHERE T2.tourney_name  =  'WTA Championships' INTERSECT SELECT T1.country_code ,  T1.first_name FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id WHERE T2.tourney_name  =  'Australian Open'",
-      "generated_sql": "SELECT DISTINCT T1.country_code, T1.first_name\nFROM players AS T1\nJOIN matches AS T2 ON T1.player_id = T2.winner_id\nWHERE T2.tourney_name IN ('WTA Championships', 'Australian Open')\nGROUP BY T1.country_code, T1.first_name\nHAVING COUNT(DISTINCT T2.tourney_name) = 2;",
+      "generated_sql": "SELECT DISTINCT T1.country_code, T1.first_name\nFROM players AS T1\nJOIN matches AS T2 ON T1.player_id = T2.winner_id\nWHERE T2.tourney_name IN ('WTA Championships', 'Australian Open')\nGROUP BY T1.player_id\nHAVING COUNT(DISTINCT T2.tourney_name) = 2;",
       "execution_accuracy": true,
       "invalid_sql": false
     },
@@ -899,9 +899,9 @@
       "question": "How many car models are produced in the usa?",
       "db_id": "car_1",
       "gold_sql": "SELECT count(*) FROM MODEL_LIST AS T1 JOIN CAR_MAKERS AS T2 ON T1.Maker  =  T2.Id JOIN COUNTRIES AS T3 ON T2.Country  =  T3.CountryId WHERE T3.CountryName  =  'usa';",
-      "generated_sql": "SELECT COUNT(T2.Model) \nFROM countries AS T1 \nJOIN continents AS T3 ON T1.Continent = T3.ContId \nJOIN car_makers AS T4 ON T1.CountryId = T4.Country \nJOIN model_list AS T5 ON T4.Id = T5.Maker \nWHERE T3.Continent = 'USA';",
+      "generated_sql": "SELECT COUNT(T2.Model) FROM countries AS T1 INNER JOIN model_list AS T2 ON T1.CountryId = T2.Maker WHERE T1.Continent = 1;",
       "execution_accuracy": false,
-      "invalid_sql": true
+      "invalid_sql": false
     }
   ]
 }

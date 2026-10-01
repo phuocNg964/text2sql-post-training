@@ -1,128 +1,110 @@
 #,Invalid?,DB,Question,Gold SQL,Predicted SQL
-1,No,battle_death,"Show names, results and bulgarian commanders of the battles with no ships lost in the 'English Channel'.","SELECT name ,  RESULT ,  bulgarian_commander FROM battle EXCEPT SELECT T1.name ,  T1.result ,  T1.bulgarian_commander FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.location  =  'English Channel'","SELECT T1.name, T1.result, T1.bulgarian_commander
+1,Yes,battle_death,"Show names, results and bulgarian commanders of the battles with no ships lost in the 'English Channel'.","SELECT name ,  RESULT ,  bulgarian_commander FROM battle EXCEPT SELECT T1.name ,  T1.result ,  T1.bulgarian_commander FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.location  =  'English Channel'","SELECT T1.name, T1.result, T1.bulgarian_commander
 FROM battle AS T1
-JOIN ship AS T2 ON T1.id = T2.lost_in_battle
-WHERE T2.location != 'English Channel';"
+WHERE T1.id NOT IN (
+    SELECT T2.battle_id
+    FROM ship AS T2
+    WHERE T2.location = 'English Channel'
+)"
 2,No,battle_death,What are the ids and names of the battles that led to more than 10 people killed in total.,"SELECT T1.id ,  T1.name FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle JOIN death AS T3 ON T2.id  =  T3.caused_by_ship_id GROUP BY T1.id HAVING sum(T3.killed)  >  10","SELECT b.id, b.name
 FROM battle b
-JOIN death d ON b.id = d.caused_by_ship_id
-GROUP BY b.id, b.name
-HAVING SUM(d.killed) > 10;"
-3,No,battle_death,What are the death and injury situations caused by the ship with tonnage 't'?,"SELECT T1.killed ,  T1.injured FROM death AS T1 JOIN ship AS t2 ON T1.caused_by_ship_id  =  T2.id WHERE T2.tonnage  =  't'","SELECT d.note, d.killed, d.injured
-FROM death d
-JOIN ship s ON d.caused_by_ship_id = s.id
-WHERE s.tonnage = 't';"
+JOIN (
+    SELECT caused_by_ship_id
+    FROM death
+    GROUP BY caused_by_ship_id
+    HAVING SUM(killed) > 10
+) d ON b.id = d.caused_by_ship_id;"
+3,No,battle_death,What are the death and injury situations caused by the ship with tonnage 't'?,"SELECT T1.killed ,  T1.injured FROM death AS T1 JOIN ship AS t2 ON T1.caused_by_ship_id  =  T2.id WHERE T2.tonnage  =  't'","SELECT T2.note, T2.killed, T2.injured FROM ship AS T1 INNER JOIN death AS T2 ON T1.id = T2.caused_by_ship_id WHERE T1.tonnage = 't';"
 4,Yes,car_1,"For the cars with 4 cylinders, which model has the largest horsepower?",SELECT T1.Model FROM CAR_NAMES AS T1 JOIN CARS_DATA AS T2 ON T1.MakeId  =  T2.Id WHERE T2.Cylinders  =  4 ORDER BY T2.horsepower DESC LIMIT 1;,SELECT T2.Model FROM cars_data AS T1 INNER JOIN car_names AS T2 ON T1.MakeId = T2.MakeId WHERE T1.Cylinders = 4 ORDER BY T1.Horsepower DESC LIMIT 1;
-5,Yes,car_1,Which distinctive models are produced by maker with the full name General Motors or weighing more than 3500?,SELECT DISTINCT T2.Model FROM CAR_NAMES AS T1 JOIN MODEL_LIST AS T2 ON T1.Model  =  T2.Model JOIN CAR_MAKERS AS T3 ON T2.Maker  =  T3.Id JOIN CARS_DATA AS T4 ON T1.MakeId  =  T4.Id WHERE T3.FullName  =  'General Motors' OR T4.weight  >  3500;,SELECT DISTINCT T2.Model FROM car_makers AS T1 INNER JOIN car_names AS T2 ON T1.Id = T2.MakeId INNER JOIN cars_data AS T3 ON T2.MakeId = T3.MakeId WHERE T1.FullName = 'General Motors' OR T3.Weight > 3500;
+5,Yes,car_1,Which distinctive models are produced by maker with the full name General Motors or weighing more than 3500?,SELECT DISTINCT T2.Model FROM CAR_NAMES AS T1 JOIN MODEL_LIST AS T2 ON T1.Model  =  T2.Model JOIN CAR_MAKERS AS T3 ON T2.Maker  =  T3.Id JOIN CARS_DATA AS T4 ON T1.MakeId  =  T4.Id WHERE T3.FullName  =  'General Motors' OR T4.weight  >  3500;,"SELECT DISTINCT T2.Model 
+FROM car_makers AS T1 
+JOIN car_names AS T2 ON T1.Id = T2.MakeId 
+JOIN cars_data AS T3 ON T2.MakeId = T3.MakeId 
+WHERE T1.FullName = 'General Motors' OR T3.Weight > 3500;"
 6,Yes,car_1,What is the model for the car with a weight smaller than the average?,SELECT T1.model FROM CAR_NAMES AS T1 JOIN CARS_DATA AS T2 ON T1.MakeId  =  T2.Id WHERE T2.Weight  <  (SELECT avg(Weight) FROM CARS_DATA),SELECT T2.Model FROM cars_data AS T1 INNER JOIN car_names AS T2 ON T1.MakeId = T2.MakeId WHERE T1.Weight < (SELECT AVG(Weight) FROM cars_data)
-7,No,concert_singer,List all song names by singers above the average age.,SELECT song_name FROM singer WHERE age  >  (SELECT avg(age) FROM singer),"SELECT s.Song_Name 
+7,Yes,concert_singer,List all song names by singers above the average age.,SELECT song_name FROM singer WHERE age  >  (SELECT avg(age) FROM singer),SELECT T2.Song_Name FROM singer AS T1 INNER JOIN singer_in_concert AS T3 ON T1.Singer_ID = T3.Singer_ID INNER JOIN concert AS T4 ON T3.concert_ID = T4.concert_ID INNER JOIN stadium AS T5 ON T4.Stadium_ID = T5.Stadium_ID INNER JOIN singer AS T6 ON T3.Singer_ID = T6.Singer_ID WHERE T1.Age > (SELECT AVG(Age) FROM singer)
+8,No,concert_singer,List all singer names in concerts in year 2014.,SELECT T2.name FROM singer_in_concert AS T1 JOIN singer AS T2 ON T1.singer_id  =  T2.singer_id JOIN concert AS T3 ON T1.concert_id  =  T3.concert_id WHERE T3.year  =  2014,"SELECT DISTINCT T3.Name 
+FROM concert AS T1 
+JOIN singer_in_concert AS T2 ON T1.concert_ID = T2.concert_ID 
+JOIN singer AS T3 ON T2.Singer_ID = T3.Singer_ID 
+WHERE T1.Year = '2014';"
+9,Yes,concert_singer,What is the name and country of origin of every singer who has a song with the word 'Hey' in its title?,"SELECT name ,  country FROM singer WHERE song_name LIKE '%Hey%'","SELECT s.Name, s.Country 
 FROM singer s 
 JOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID 
 JOIN concert c ON sic.concert_ID = c.concert_ID 
-WHERE s.Age > (SELECT AVG(Age) FROM singer)"
-8,No,concert_singer,List all singer names in concerts in year 2014.,SELECT T2.name FROM singer_in_concert AS T1 JOIN singer AS T2 ON T1.singer_id  =  T2.singer_id JOIN concert AS T3 ON T1.concert_id  =  T3.concert_id WHERE T3.year  =  2014,"SELECT DISTINCT s.Name 
-FROM singer s 
-JOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID 
-JOIN concert c ON sic.concert_ID = c.concert_ID 
-WHERE c.Year = '2014';"
-9,Yes,concert_singer,What is the name and country of origin of every singer who has a song with the word 'Hey' in its title?,"SELECT name ,  country FROM singer WHERE song_name LIKE '%Hey%'","SELECT s.Name, s.Country FROM singer s
-JOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID
-JOIN concert c ON sic.concert_ID = c.concert_ID
-JOIN song ON c.concert_ID = song.concert_ID
+JOIN song ON c.concert_ID = song.concert_ID 
 WHERE song.Song_Name LIKE '%Hey%'"
 10,No,course_teach,What is the age and hometown of every teacher?,"SELECT Age ,  Hometown FROM teacher","SELECT T1.Age, T1.Hometown FROM teacher AS T1 INNER JOIN course_arrange AS T2 ON T1.Teacher_ID = T2.Teacher_ID"
 11,Yes,course_teach,What are the names of the teachers and the courses they teach in ascending alphabetical order by the name of the teacher?,"SELECT T3.Name ,  T2.Course FROM course_arrange AS T1 JOIN course AS T2 ON T1.Course_ID  =  T2.Course_ID JOIN teacher AS T3 ON T1.Teacher_ID  =  T3.Teacher_ID ORDER BY T3.Name","SELECT T2.Name, T1.Course FROM course_arrange AS T1 INNER JOIN teacher AS T2 ON T1.Teacher_ID = T2.Teacher_ID ORDER BY T2.Name ASC;"
 12,Yes,cre_Doc_Template_Mgt,Return the different descriptions for templates that have been used in a document.,SELECT DISTINCT T1.template_type_description FROM Ref_template_types AS T1 JOIN Templates AS T2 ON T1.template_type_code  = T2.template_type_code JOIN Documents AS T3 ON T2.Template_ID  =  T3.template_ID,"SELECT DISTINCT T2.Template_Description 
 FROM Documents AS T1 
 JOIN Templates AS T2 ON T1.Template_ID = T2.Template_ID;"
-13,Yes,dog_kennels,List the emails of the professionals who live in the state of Hawaii or the state of Wisconsin.,SELECT email_address FROM Professionals WHERE state  =  'Hawaii' OR state  =  'Wisconsin',"SELECT T3.email_address FROM Professionals AS T1 INNER JOIN Addresses AS T2 ON T1.professional_id = T2.professional_id INNER JOIN States AS T3 ON T2.state_code = T3.state_code WHERE T3.state_name IN ('Hawaii', 'Wisconsin');"
-14,No,dog_kennels,"List each owner's first name, last name, and the size of his for her dog.","SELECT T1.first_name ,  T1.last_name ,  T2.size_code FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id","SELECT O.first_name, O.last_name, S.size_description
+13,No,cre_Doc_Template_Mgt,Return the names and template ids for documents that contain the letter w in their description.,"SELECT document_name ,  template_id FROM Documents WHERE Document_Description LIKE ""%w%""","SELECT D.Document_Name, D.Document_ID
+FROM Documents D
+WHERE D.Document_Description LIKE '%w%';"
+14,Yes,dog_kennels,List the emails of the professionals who live in the state of Hawaii or the state of Wisconsin.,SELECT email_address FROM Professionals WHERE state  =  'Hawaii' OR state  =  'Wisconsin',"SELECT T3.email_address FROM Professionals AS T1 INNER JOIN Owners AS T2 ON T1.professional_id = T2.owner_id INNER JOIN Sizes AS T3 ON T2.size_code = T3.size_code WHERE T2.state IN ('Hawaii', 'Wisconsin');"
+15,No,dog_kennels,"List each owner's first name, last name, and the size of his for her dog.","SELECT T1.first_name ,  T1.last_name ,  T2.size_code FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id","SELECT O.first_name, O.last_name, S.size_description
 FROM Owners O
 JOIN Dogs D ON O.owner_id = D.owner_id
 JOIN Sizes S ON D.size_code = S.size_code;"
-15,Yes,dog_kennels,What are each professional's first name and description of the treatment they have performed?,"SELECT DISTINCT T1.first_name ,  T3.treatment_type_description FROM professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id JOIN Treatment_types AS T3 ON T2.treatment_type_code  =  T3.treatment_type_code","SELECT T3.first_name, T4.treatment_type_description FROM Treatments AS T1 INNER JOIN Professionals AS T2 ON T1.professional_id = T2.professional_id INNER JOIN Treatment_Types AS T4 ON T1.treatment_type_code = T4.treatment_type_code INNER JOIN Dogs AS T5 ON T1.dog_id = T5.dog_id;"
-16,Yes,dog_kennels,"Find the id, last name and cell phone of the professionals who live in the state of Indiana or have performed more than two treatments.","SELECT professional_id ,  last_name ,  cell_number FROM Professionals WHERE state  =  'Indiana' UNION SELECT T1.professional_id ,  T1.last_name ,  T1.cell_number FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id GROUP BY T1.professional_id HAVING count(*)  >  2","SELECT T3.professional_id, T3.last_name, T3.cell_number
+16,Yes,dog_kennels,What are each professional's first name and description of the treatment they have performed?,"SELECT DISTINCT T1.first_name ,  T3.treatment_type_description FROM professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id JOIN Treatment_types AS T3 ON T2.treatment_type_code  =  T3.treatment_type_code","SELECT T3.first_name, T4.treatment_type_description FROM Treatments AS T1 INNER JOIN Professionals AS T2 ON T1.professional_id = T2.professional_id INNER JOIN Treatment_Types AS T4 ON T1.treatment_type_code = T4.treatment_type_code;"
+17,Yes,dog_kennels,"Find the id, last name and cell phone of the professionals who live in the state of Indiana or have performed more than two treatments.","SELECT professional_id ,  last_name ,  cell_number FROM Professionals WHERE state  =  'Indiana' UNION SELECT T1.professional_id ,  T1.last_name ,  T1.cell_number FROM Professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id GROUP BY T1.professional_id HAVING count(*)  >  2","SELECT T3.professional_id, T3.last_name, T3.cell_number
 FROM Owners AS T1
 JOIN Dogs AS T2 ON T1.owner_id = T2.owner_id
 JOIN Treatments AS T3 ON T2.dog_id = T3.dog_id
 WHERE T1.state = 'Indiana' OR COUNT(T3.treatment_id) > 2;"
-17,Yes,employee_hire_evaluation,"For each shop, return the number of employees working there and the name of the shop.","SELECT count(*) ,  t2.name FROM hiring AS t1 JOIN shop AS t2 ON t1.shop_id  =  t2.shop_id GROUP BY t2.name","SELECT s.Name, COUNT(e.Employee_ID) AS Number_of_Employees
-FROM shop s
-JOIN hiring h ON s.Shop_ID = h.Shop_ID
-GROUP BY s.Shop_ID, s.Name;"
-18,Yes,flight_2,Which city and country is the Alton airport at?,"SELECT City ,  Country FROM AIRPORTS WHERE AirportName  =  ""Alton""","SELECT T2.City, T2.Country FROM airports AS T1 INNER JOIN airlines AS T3 ON T1.AirportCode = T3.Abbreviation WHERE T1.AirportName = 'Alton';"
+18,Yes,flight_2,Which city and country is the Alton airport at?,"SELECT City ,  Country FROM AIRPORTS WHERE AirportName  =  ""Alton""","SELECT T2.City, T2.Country FROM airports AS T1 INNER JOIN airlines AS T2 ON T1.AirportCode = T2.uid WHERE T1.AirportName = 'Alton'"
 19,No,network_1,How many friends does each student have?,"SELECT student_id ,  count(*) FROM Friend GROUP BY student_id","SELECT H1.name, COUNT(F2.student_id) AS friend_count
 FROM Highschooler H1
 JOIN Friend F2 ON H1.ID = F2.student_id
 GROUP BY H1.name;"
-20,No,network_1,Show the names of high school students and their corresponding number of friends.,"SELECT T2.name ,  count(*) FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id GROUP BY T1.student_id","SELECT H.name, COUNT(F.friend_id) AS num_friends
-FROM Highschooler H
-JOIN Friend F ON H.ID = F.student_id
-GROUP BY H.name;"
-21,Yes,network_1,What are the names of high schoolers who both have friends and are liked?,SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id,"SELECT DISTINCT T3.name 
-FROM Friend AS T1 
-JOIN Highschooler AS T2 ON T1.friend_id = T2.ID 
-JOIN Likes AS T3 ON T1.student_id = T3.student_id 
-WHERE T2.name IN (
-    SELECT T4.name 
-    FROM Friend AS T5 
-    JOIN Highschooler AS T6 ON T5.student_id = T6.ID 
-    WHERE T6.name IN (
-        SELECT T7.name 
-        FROM Likes AS T8 
-        JOIN Highschooler AS T9 ON T8.liked_id = T9.ID 
-        GROUP BY T9.name 
-        HAVING COUNT(T8.student_id) > 0
-    )
-)"
+20,No,network_1,Show the names of high school students and their corresponding number of friends.,"SELECT T2.name ,  count(*) FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id GROUP BY T1.student_id","SELECT T2.name, COUNT(T1.friend_id) AS num_friends
+FROM Friend AS T1
+JOIN Highschooler AS T2 ON T1.friend_id = T2.ID
+GROUP BY T2.name;"
+21,No,network_1,What are the names of high schoolers who both have friends and are liked?,SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id,"SELECT DISTINCT T1.name 
+FROM Highschooler AS T1 
+JOIN Friend AS T2 ON T1.ID = T2.student_id 
+JOIN Likes AS T3 ON T1.ID = T3.student_id;"
 22,Yes,orchestra,What are years of founding for orchestras that have had more than a single performance?,SELECT Year_of_Founded FROM orchestra AS T1 JOIN performance AS T2 ON T1.Orchestra_ID  =  T2.Orchestra_ID GROUP BY T2.Orchestra_ID HAVING COUNT(*)  >  1,SELECT T2.Year_of_Founded FROM orchestra AS T1 INNER JOIN performance AS T2 ON T1.Orchestra_ID = T2.Orchestra_ID GROUP BY T1.Orchestra_ID HAVING COUNT(T2.Performance_ID) > 1;
-23,No,pets_1,Find the average and maximum age for each type of pet.,"SELECT avg(pet_age) ,  max(pet_age) ,  pettype FROM pets GROUP BY pettype","SELECT p.PetType, AVG(s.Age) AS AverageAge, MAX(s.Age) AS MaxAge
-FROM Has_Pet hp
-JOIN Student s ON hp.StuID = s.StuID
+23,Yes,pets_1,Find the average and maximum age for each type of pet.,"SELECT avg(pet_age) ,  max(pet_age) ,  pettype FROM pets GROUP BY pettype","SELECT p.PetType, AVG(s.Age) AS AverageAge, MAX(s.Age) AS MaxAge
+FROM Students s
+JOIN Has_Pet hp ON s.StuID = hp.StuID
 JOIN Pets p ON hp.PetID = p.PetID
 GROUP BY p.PetType;"
-24,No,real_estate_properties,What are the names of properties that are either houses or apartments with more than 1 room?,"SELECT property_name FROM Properties WHERE property_type_code  =  ""House"" UNION SELECT property_name FROM Properties WHERE property_type_code  =  ""Apartment"" AND room_count  >  1","SELECT p.property_name 
+24,No,pets_1,What is the last name of the student who has a cat that is 3 years old?,SELECT T1.lname FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pet_age  =  3 AND T3.pettype  =  'cat',SELECT T2.LName FROM Has_Pet AS T1 INNER JOIN Student AS T2 ON T1.StuID = T2.StuID INNER JOIN Pets AS T3 ON T1.PetID = T3.PetID WHERE T3.PetType = 'Cat' AND T3.pet_age = 3;
+25,Yes,poker_player,What is the money rank of the poker player with the highest earnings?,SELECT Money_Rank FROM poker_player ORDER BY Earnings DESC LIMIT 1,SELECT T2.Money_Rank FROM poker_player AS T1 INNER JOIN people AS T2 ON T1.People_ID = T2.People_ID ORDER BY T1.Earnings DESC LIMIT 1;
+26,No,real_estate_properties,What are the names of properties that are either houses or apartments with more than 1 room?,"SELECT property_name FROM Properties WHERE property_type_code  =  ""House"" UNION SELECT property_name FROM Properties WHERE property_type_code  =  ""Apartment"" AND room_count  >  1","SELECT p.property_name 
 FROM Properties p 
-JOIN Ref_Property_Types pt ON p.property_type_code = pt.property_type_code 
-WHERE pt.property_type_description IN ('House', 'Apartment') AND p.room_count > 1;"
-25,No,real_estate_properties,Show the property type descriptions of properties belonging to that code.,SELECT T2.property_type_description FROM Properties AS T1 JOIN Ref_Property_Types AS T2 ON T1.property_type_code  =  T2.property_type_code GROUP BY T1.property_type_code,SELECT T2.property_type_description FROM Properties AS T1 INNER JOIN Ref_Property_Types AS T2 ON T1.property_type_code = T2.property_type_code WHERE T1.property_type_code = 'SINGLE_FAMILY';
-26,Yes,singer,Show the names of singers and the total sales of their songs.,"SELECT T1.Name ,  sum(T2.Sales) FROM singer AS T1 JOIN song AS T2 ON T1.Singer_ID  =  T2.Singer_ID GROUP BY T1.Name","SELECT s.Name, SUM(s.Sales) AS Total_Sales
-FROM singer s
-JOIN song ON s.Singer_ID = song.Singer_ID
-GROUP BY s.Name;"
-27,No,student_transcripts_tracking,What are the last name of the students who live in North Carolina but have not registered in any degree programs?,SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id,SELECT T1.last_name FROM Students AS T1 INNER JOIN Addresses AS T2 ON T1.permanent_address_id = T2.address_id WHERE T2.state_province_county = 'North Carolina' AND T1.student_id NOT IN (SELECT student_id FROM Student_Enrolment)
-28,No,tvshow,What are the ids of the TV channels that do not have any cartoons directed by Ben Jones?,SELECT id FROM TV_Channel EXCEPT SELECT channel FROM cartoon WHERE directed_by  =  'Ben Jones',SELECT DISTINCT T2.id FROM Cartoon AS T1 INNER JOIN TV_Channel AS T2 ON T1.Channel = T2.id WHERE T1.Directed_by != 'Ben Jones'
-29,Yes,tvshow,"What is the episode for the TV series named ""Sky Radio""?","SELECT T2.Episode FROM TV_Channel AS T1 JOIN TV_series AS T2 ON T1.id = T2.Channel WHERE T1.series_name = ""Sky Radio"";",SELECT Episode FROM TV_series WHERE series_name = 'Sky Radio';
+JOIN Other_Property_Features opf ON p.property_id = opf.property_id 
+JOIN Other_Available_Features oa ON opf.feature_id = oa.feature_id 
+JOIN Ref_Property_Types rpt ON p.property_type_code = rpt.property_type_code 
+WHERE (rpt.property_type_description = 'House' OR rpt.property_type_description = 'Apartment') AND p.room_count > 1;"
+27,Yes,real_estate_properties,Show the property type descriptions of properties belonging to that code.,SELECT T2.property_type_description FROM Properties AS T1 JOIN Ref_Property_Types AS T2 ON T1.property_type_code  =  T2.property_type_code GROUP BY T1.property_type_code,SELECT T2.property_type_description FROM Other_Property_Features AS T1 INNER JOIN Ref_Property_Types AS T2 ON T1.property_type_code = T2.property_type_code WHERE T1.property_id = 1;
+28,No,student_transcripts_tracking,What are the last name of the students who live in North Carolina but have not registered in any degree programs?,SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id,SELECT T1.last_name FROM Students AS T1 INNER JOIN Addresses AS T2 ON T1.permanent_address_id = T2.address_id WHERE T2.state_province_county = 'North Carolina' AND T1.student_id NOT IN (SELECT student_id FROM Student_Enrolment)
+29,No,tvshow,What are the ids of the TV channels that do not have any cartoons directed by Ben Jones?,SELECT id FROM TV_Channel EXCEPT SELECT channel FROM cartoon WHERE directed_by  =  'Ben Jones',SELECT DISTINCT T2.id FROM Cartoon AS T1 INNER JOIN TV_Channel AS T2 ON T1.Channel = T2.id WHERE T1.Directed_by != 'Ben Jones'
 30,No,tvshow,Find the series name and country of the tv channel that is playing some cartoons directed by Ben Jones and Michael Chang?,"SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'","SELECT T2.series_name, T2.Country 
 FROM Cartoon AS T1 
 JOIN TV_Channel AS T2 ON T1.Channel = T2.id 
-WHERE T1.Directed_by IN ('Ben Jones', 'Michael Chang');"
-31,No,voter_1,What is the area code in which the most voters voted?,SELECT T1.area_code FROM area_code_state AS T1 JOIN votes AS T2 ON T1.state  =  T2.state GROUP BY T1.area_code ORDER BY count(*) DESC LIMIT 1,"SELECT area_code FROM AREA_CODE_STATE WHERE state = 
-(SELECT state FROM VOTES GROUP BY state ORDER BY COUNT(*) DESC LIMIT 1)"
-32,No,voter_1,List the area codes in which voters voted both for the contestant 'Tabatha Gehling' and the contestant 'Kelly Clauss'.,SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss',"SELECT DISTINCT T1.area_code 
-FROM AREA_CODE_STATE AS T1 
-JOIN VOTES AS T2 ON T1.state = T2.state 
+WHERE T1.Directed_by = 'Ben Jones' AND T1.Directed_by = 'Michael Chang';"
+31,Yes,voter_1,List the area codes in which voters voted both for the contestant 'Tabatha Gehling' and the contestant 'Kelly Clauss'.,SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss',"SELECT DISTINCT T1.area_code
+FROM AREA_CODE_STATE AS T1
+JOIN VOTES AS T2 ON T1.state = T2.state
 WHERE T2.contestant_number IN (
-    SELECT contestant_number 
-    FROM CONTESTANTS 
+    SELECT contestant_number
+    FROM VOTES
     WHERE contestant_name = 'Tabatha Gehling'
-) 
-AND T2.contestant_number IN (
-    SELECT contestant_number 
-    FROM CONTESTANTS 
+) AND T2.contestant_number IN (
+    SELECT contestant_number
+    FROM VOTES
     WHERE contestant_name = 'Kelly Clauss'
 );"
-33,Yes,voter_1,"What are the create dates, states, and phone numbers of the votes that were for the contestant named 'Tabatha Gehling'?","SELECT T2.created ,  T2.state ,  T2.phone_number FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number WHERE T1.contestant_name  =  'Tabatha Gehling'","SELECT T3.created, T3.state, T3.phone_number FROM CONTESTANTS AS T1 INNER JOIN VOTES AS T2 ON T1.contestant_number = T2.contestant_number INNER JOIN AREA_CODE_STATE AS T3 ON T2.state = T3.state WHERE T1.contestant_name = 'Tabatha Gehling';"
-34,Yes,world_1,What are the African countries that have a  population less than any country in Asia?,"SELECT Name FROM country WHERE Continent  =  ""Africa""  AND population  <  (SELECT max(population) FROM country WHERE Continent  =  ""Asia"")",SELECT T2.Name FROM country AS T1 INNER JOIN city AS T3 ON T1.Code = T3.CountryCode INNER JOIN countrylanguage AS T4 ON T1.Code = T4.CountryCode WHERE T1.Continent = 'Africa' AND T1.Population < ( SELECT MIN(Population) FROM country WHERE Continent = 'Asia' )
-35,No,world_1,What are the names of nations where both English and French are official languages?,"SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  ""English"" AND T2.IsOfficial  =  ""T"" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  ""French"" AND T2.IsOfficial  =  ""T""",SELECT T2.Name FROM countrylanguage AS T1 INNER JOIN country AS T2 ON T1.CountryCode = T2.Code WHERE T1.Language = 'English' INTERSECT SELECT T2.Name FROM countrylanguage AS T1 INNER JOIN country AS T2 ON T1.CountryCode = T2.Code WHERE T1.Language = 'French'
-36,No,world_1,Return the country codes for countries that do not speak English.,"SELECT CountryCode FROM countrylanguage EXCEPT SELECT CountryCode FROM countrylanguage WHERE LANGUAGE  =  ""English""",SELECT T1.Code FROM country AS T1 INNER JOIN countrylanguage AS T2 ON T1.Code = T2.CountryCode WHERE T2.Language != 'English'
-37,No,wta_1,List the first name and birth date of all players from the country with code USA.,"SELECT first_name ,  birth_date FROM players WHERE country_code  =  'USA'","SELECT p.first_name, p.birth_date
-FROM players p
-JOIN rankings r ON p.player_id = r.player_id
-WHERE p.country_code = 'USA';"
-38,Yes,car_1,How many car models are produced in the usa?,SELECT count(*) FROM MODEL_LIST AS T1 JOIN CAR_MAKERS AS T2 ON T1.Maker  =  T2.Id JOIN COUNTRIES AS T3 ON T2.Country  =  T3.CountryId WHERE T3.CountryName  =  'usa';,"SELECT COUNT(T2.Model) 
-FROM countries AS T1 
-JOIN continents AS T3 ON T1.Continent = T3.ContId 
-JOIN car_makers AS T4 ON T1.CountryId = T4.Country 
-JOIN model_list AS T5 ON T4.Id = T5.Maker 
-WHERE T3.Continent = 'USA';"
+32,No,voter_1,What are the names of the contestants whose names are not 'Jessie Alloway',SELECT contestant_name FROM contestants WHERE contestant_name != 'Jessie Alloway',SELECT DISTINCT T2.contestant_name FROM VOTES AS T1 INNER JOIN CONTESTANTS AS T2 ON T1.contestant_number = T2.contestant_number WHERE T2.contestant_name != 'Jessie Alloway'
+33,Yes,voter_1,"What are the create dates, states, and phone numbers of the votes that were for the contestant named 'Tabatha Gehling'?","SELECT T2.created ,  T2.state ,  T2.phone_number FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number WHERE T1.contestant_name  =  'Tabatha Gehling'","SELECT T3.created, T1.state, T2.phone_number 
+FROM CONTESTANTS AS T1 
+JOIN VOTES AS T2 ON T1.contestant_number = T2.contestant_number 
+JOIN AREA_CODE_STATE AS T3 ON T2.state = T3.state 
+WHERE T1.contestant_name = 'Tabatha Gehling';"
+34,No,world_1,What are the African countries that have a  population less than any country in Asia?,"SELECT Name FROM country WHERE Continent  =  ""Africa""  AND population  <  (SELECT max(population) FROM country WHERE Continent  =  ""Asia"")",SELECT T2.Name FROM country AS T1 INNER JOIN city AS T2 ON T1.Code = T2.CountryCode WHERE T1.Continent = 'Africa' AND T1.Population < ( SELECT MIN(Population) FROM country WHERE Continent = 'Asia' )
+35,No,world_1,Return the country codes for countries that do not speak English.,"SELECT CountryCode FROM countrylanguage EXCEPT SELECT CountryCode FROM countrylanguage WHERE LANGUAGE  =  ""English""",SELECT T1.Code FROM country AS T1 INNER JOIN countrylanguage AS T2 ON T1.Code = T2.CountryCode WHERE T2.Language != 'English'
+36,No,car_1,How many car models are produced in the usa?,SELECT count(*) FROM MODEL_LIST AS T1 JOIN CAR_MAKERS AS T2 ON T1.Maker  =  T2.Id JOIN COUNTRIES AS T3 ON T2.Country  =  T3.CountryId WHERE T3.CountryName  =  'usa';,SELECT COUNT(T2.Model) FROM countries AS T1 INNER JOIN model_list AS T2 ON T1.CountryId = T2.Maker WHERE T1.Continent = 1;
