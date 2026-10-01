@@ -29,17 +29,17 @@ training:
   seed: 42
 
 data:
-  path: "data/sft_full.jsonl"
-  n_train: 1000
-  n_eval: 100
+  train_path: "data/sft_targeted_train.jsonl"   # targeted AST-filtered curation
+  eval_path:  "data/sft_eval.jsonl"             # 100 examples (stratified spider_dev)
 
 output:
   dir: "checkpoints/sft"
 
 wandb:
   project: "text2sql-post-training"
-  name: "sft-qwen3b-r16"
+  name: "sft-qwen3b-targeted-r16"
   tags:
-    - m3
     - sft
+    - targeted
+    - ast-filtered
 

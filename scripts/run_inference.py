@@ -75,12 +75,15 @@ def main() -> None:
     parser.add_argument("--output", required=True, help="Output folder or .jsonl file path")
     parser.add_argument("--max_new_tokens", type=int, default=256)
     parser.add_argument("--n_samples", type=int, default=None)
+    parser.add_argument("--load_in_4bit", action="store_true", help="Force 4-bit NF4 quantization")
     args = parser.parse_args()
 
     print("=" * 50)
     print(f"  Model    : {args.model}")
     if args.adapter:
         print(f"  Adapter  : {args.adapter}")
+    if args.load_in_4bit:
+        print("  Quant    : 4-bit NF4")
     print(f"  Eval Set : {args.eval_set}" if args.eval_set else f"  Split    : {args.split}")
     print(f"  Output   : {args.output}")
     print("=" * 50)
@@ -98,7 +101,11 @@ def main() -> None:
         records = load_records(args.split, args.data_dir, n=args.n_samples)
         print(f"Loaded {len(records)} records from {args.split}")
 
-    model, tokenizer = load_model(args.model, adapter=args.adapter)
+    model, tokenizer = load_model(
+        args.model,
+        adapter=args.adapter,
+        load_in_4bit=True if args.load_in_4bit else None,
+    )
 
     output_dir, output_file = resolve_output(args.output)
     os.makedirs(output_dir, exist_ok=True)
