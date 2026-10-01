@@ -42,8 +42,8 @@ from src.data.sft_formatter import format_for_sft
 from src.eval.executor import execute_sql
 
 MAX_CHARS          = int(2048 * 3.5)  # ~7168 chars; matches configs/sft.yaml token budget
-ANCHOR_SHARE       = 0.15             # fraction of N reserved for random anchor pool
-TOP_K_CATEGORIES   = 3               # only curate for the top-K most frequent failures
+ANCHOR_SHARE       = 0.2             # fraction of N reserved for random anchor pool
+TOP_K_CATEGORIES   = 2               # only curate for the top-K most frequent failures
 
 
 # ---------------------------------------------------------------------------
