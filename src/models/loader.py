@@ -29,7 +29,7 @@ def _use_4bit(model_name: str) -> bool:
         return False  # unknown model — let device_map handle it
 
 
-def load_model(model_name: str, adapter: str | None = None):
+def load_model(model_name: str, adapter: str | None = None, load_in_4bit: bool | None = None):
     """
     Load a causal LM and tokenizer for inference.
     Automatically uses 4-bit NF4 for models >3B to avoid CPU offloading on T4.
@@ -39,7 +39,9 @@ def load_model(model_name: str, adapter: str | None = None):
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    if _use_4bit(model_name):
+    use_4bit = load_in_4bit if load_in_4bit is not None else _use_4bit(model_name)
+
+    if use_4bit:
         from transformers import BitsAndBytesConfig
         bnb_cfg = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -47,7 +49,7 @@ def load_model(model_name: str, adapter: str | None = None):
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
         )
-        print(f"Loading in 4-bit NF4 (model >3B)")
+        print("Loading in 4-bit NF4")
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=bnb_cfg,
