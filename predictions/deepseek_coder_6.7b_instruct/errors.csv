@@ -32,105 +32,105 @@ WHERE cars_data.Year < 1980;"
 6,No,concert_singer,List all song names by singers above the average age.,SELECT song_name FROM singer WHERE age  >  (SELECT avg(age) FROM singer),"SELECT s.Singer_ID, s.Name, s.Song_Name
 FROM singer s
 WHERE s.Age > (SELECT AVG(s.Age) FROM singer s);"
-7,No,course_teach,What is the age and hometown of every teacher?,"SELECT Age ,  Hometown FROM teacher","SELECT teacher.Teacher_ID, teacher.Age, teacher.Hometown 
+7,No,concert_singer,Which year has most number of concerts?,SELECT YEAR FROM concert GROUP BY YEAR ORDER BY count(*) DESC LIMIT 1,"SELECT Year, COUNT(*) as Number_of_Concerts
+FROM concert
+GROUP BY Year
+ORDER BY Number_of_Concerts DESC
+LIMIT 1;"
+8,No,course_teach,What is the age and hometown of every teacher?,"SELECT Age ,  Hometown FROM teacher","SELECT teacher.Teacher_ID, teacher.Age, teacher.Hometown 
 FROM teacher;"
-8,No,course_teach,List the most common hometown of teachers.,SELECT Hometown FROM teacher GROUP BY Hometown ORDER BY COUNT(*) DESC LIMIT 1,"SELECT Hometown, COUNT(*) as count
+9,No,course_teach,List the most common hometown of teachers.,SELECT Hometown FROM teacher GROUP BY Hometown ORDER BY COUNT(*) DESC LIMIT 1,"SELECT Hometown, COUNT(*) as count
 FROM teacher
 GROUP BY Hometown
 ORDER BY count DESC
 LIMIT 1;"
-9,No,dog_kennels,List the emails of the professionals who live in the state of Hawaii or the state of Wisconsin.,SELECT email_address FROM Professionals WHERE state  =  'Hawaii' OR state  =  'Wisconsin',"SELECT email_address 
-FROM Professionals 
-WHERE state IN ('HI', 'WI');"
-10,No,dog_kennels,"List each owner's first name, last name, and the size of his for her dog.","SELECT T1.first_name ,  T1.last_name ,  T2.size_code FROM Owners AS T1 JOIN Dogs AS T2 ON T1.owner_id  =  T2.owner_id","SELECT O.first_name, O.last_name, S.size_description
-FROM Owners O
-JOIN Dogs D ON O.owner_id = D.owner_id
-JOIN Sizes S ON D.size_code = S.size_code;"
-11,No,dog_kennels,What are each professional's first name and description of the treatment they have performed?,"SELECT DISTINCT T1.first_name ,  T3.treatment_type_description FROM professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id JOIN Treatment_types AS T3 ON T2.treatment_type_code  =  T3.treatment_type_code","SELECT P.first_name, TT.treatment_type_description
+10,No,dog_kennels,Which breed do the most dogs have? Give me the breed name.,SELECT T1.breed_name FROM Breeds AS T1 JOIN Dogs AS T2 ON T1.breed_code  =  T2.breed_code GROUP BY T1.breed_name ORDER BY count(*) DESC LIMIT 1,"SELECT b.breed_name, COUNT(d.dog_id) as dog_count
+FROM Breeds b
+JOIN Dogs d ON b.breed_code = d.breed_code
+GROUP BY b.breed_name
+ORDER BY dog_count DESC
+LIMIT 1;"
+11,No,dog_kennels,List the first name of all the professionals along with the description of the treatment they have done.,"SELECT DISTINCT T1.first_name ,  T3.treatment_type_description FROM professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id JOIN Treatment_types AS T3 ON T2.treatment_type_code  =  T3.treatment_type_code","SELECT P.first_name, TT.treatment_type_description
 FROM Professionals P
 JOIN Treatments T ON P.professional_id = T.professional_id
 JOIN Treatment_Types TT ON T.treatment_type_code = TT.treatment_type_code;"
-12,No,dog_kennels,Find the number of owners who do not own any dogs at this moment.,SELECT count(*) FROM Owners WHERE owner_id NOT IN ( SELECT owner_id FROM Dogs ),"SELECT COUNT(*) 
-FROM Owners 
-WHERE owner_id NOT IN (SELECT owner_id FROM Dogs WHERE abandoned_yn = 'N');"
-13,No,network_1,How many friends does each student have?,"SELECT student_id ,  count(*) FROM Friend GROUP BY student_id","SELECT h.ID, COUNT(f.friend_id) as num_friends
-FROM Highschooler h
-LEFT JOIN Friend f ON h.ID = f.student_id
-GROUP BY h.ID;"
-14,No,network_1,Show the names of high school students and their corresponding number of friends.,"SELECT T2.name ,  count(*) FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id GROUP BY T1.student_id","SELECT H.name, COUNT(F.friend_id) AS num_of_friends
-FROM Highschooler H
-JOIN Friend F ON H.ID = F.student_id
-GROUP BY H.name;"
-15,No,network_1,What are the names of high schoolers who both have friends and are liked?,SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id,"SELECT h1.name
+12,No,employee_hire_evaluation,Which cities do more than one employee under age 30 come from?,SELECT city FROM employee WHERE age  <  30 GROUP BY city HAVING count(*)  >  1,"SELECT City, COUNT(*) as Count
+FROM employee
+WHERE Age < 30
+GROUP BY City
+HAVING COUNT(*) > 1;"
+13,No,flight_2,Which airline has most number of flights?,SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline GROUP BY T1.Airline ORDER BY count(*) DESC LIMIT 1,"SELECT Airline, COUNT(*) as FlightCount
+FROM flights
+GROUP BY Airline
+ORDER BY FlightCount DESC
+LIMIT 1;"
+14,No,museum_visit,"What are the id, name and membership level of visitors who have spent the largest amount of money in total in all museum tickets?","SELECT t2.visitor_id ,  t1.name ,  t1.Level_of_membership FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id GROUP BY t2.visitor_id ORDER BY sum(t2.Total_spent) DESC LIMIT 1","SELECT visitor.ID, visitor.Name, visitor.Level_of_membership
+FROM visitor
+INNER JOIN visit ON visitor.ID = visit.visitor_ID
+GROUP BY visitor.ID
+ORDER BY SUM(visit.Total_spent) DESC
+LIMIT 1;"
+15,No,museum_visit,"Find the name and membership level of the visitors whose membership level is higher than 4, and sort by their age from old to young.","SELECT name ,  Level_of_membership FROM visitor WHERE Level_of_membership  >  4 ORDER BY age DESC","SELECT visitor.Name, visitor.Level_of_membership
+FROM visitor
+JOIN visit ON visitor.ID = visit.visitor_ID
+WHERE visitor.Level_of_membership > 4
+ORDER BY visitor.Age DESC;"
+16,No,network_1,What are the ids of students who both have friends and are liked?,SELECT student_id FROM Friend INTERSECT SELECT liked_id FROM Likes,"SELECT Likes.student_id
+FROM Likes
+JOIN Friend ON Likes.student_id = Friend.student_id
+WHERE Likes.liked_id = Friend.friend_id;"
+17,No,network_1,Show names of all high school students who do not have any friends.,SELECT name FROM Highschooler EXCEPT SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id,"SELECT name 
+FROM Highschooler 
+WHERE ID NOT IN (SELECT student_id FROM Friend) AND ID NOT IN (SELECT friend_id FROM Friend);"
+18,No,network_1,What are the names of high schoolers who both have friends and are liked?,SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id,"SELECT h1.name
 FROM Highschooler h1
 JOIN Friend f1 ON h1.ID = f1.student_id
 JOIN Friend f2 ON h1.ID = f2.friend_id
 JOIN Likes l1 ON h1.ID = l1.student_id
 WHERE f1.friend_id = l1.liked_id;"
-16,No,orchestra,What are years of founding for orchestras that have had more than a single performance?,SELECT Year_of_Founded FROM orchestra AS T1 JOIN performance AS T2 ON T1.Orchestra_ID  =  T2.Orchestra_ID GROUP BY T2.Orchestra_ID HAVING COUNT(*)  >  1,"SELECT o.Year_of_Founded
-FROM orchestra o
-JOIN performance p ON o.Orchestra_ID = p.Orchestra_ID
-GROUP BY o.Year_of_Founded
-HAVING COUNT(p.Performance_ID) > 1;"
-17,No,pets_1,What is the last name of the student who has a cat that is 3 years old?,SELECT T1.lname FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T3.petid  =  T2.petid WHERE T3.pet_age  =  3 AND T3.pettype  =  'cat',"SELECT S.LName
-FROM Student S
-JOIN Has_Pet HP ON S.StuID = HP.StuID
-JOIN Pets P ON HP.PetID = P.PetID
-WHERE P.PetType = 'Cat' AND P.pet_age = 3;"
-18,No,poker_player,What is the most common nationality of people?,SELECT Nationality FROM people GROUP BY Nationality ORDER BY COUNT(*) DESC LIMIT 1,"SELECT Nationality, COUNT(Nationality) as Count
+19,No,network_1,"What are the names of high schoolers who have likes, and how many likes does each have?","SELECT T2.name ,  count(*) FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id GROUP BY T1.student_id","SELECT Highschooler.name, COUNT(Likes.liked_id) as likes_count
+FROM Highschooler
+JOIN Likes ON Highschooler.ID = Likes.student_id
+GROUP BY Highschooler.name;"
+20,No,orchestra,What is the name of the conductor who has conducted the most orchestras?,SELECT T1.Name FROM conductor AS T1 JOIN orchestra AS T2 ON T1.Conductor_ID  =  T2.Conductor_ID GROUP BY T2.Conductor_ID ORDER BY COUNT(*) DESC LIMIT 1,"SELECT c.Name
+FROM conductor c
+JOIN orchestra o ON c.Conductor_ID = o.Conductor_ID
+GROUP BY c.Name
+ORDER BY COUNT(o.Orchestra_ID) DESC
+LIMIT 1;"
+21,No,pets_1,Find the number of dog pets that are raised by female students (with sex F).,SELECT count(*) FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T2.petid  =  T3.petid WHERE T1.sex  =  'F' AND T3.pettype  =  'dog',"SELECT COUNT(*) 
+FROM Has_Pet 
+JOIN Pets ON Has_Pet.PetID = Pets.PetID 
+JOIN Student ON Has_Pet.StuID = Student.StuID 
+WHERE Pets.PetType = 'Dog' AND Student.Sex = 'F';"
+22,No,poker_player,Give the nationality that is most common across all people.,SELECT Nationality FROM people GROUP BY Nationality ORDER BY COUNT(*) DESC LIMIT 1,"SELECT Nationality, COUNT(*) as Count
 FROM people
-JOIN poker_player ON people.People_ID = poker_player.People_ID
 GROUP BY Nationality
 ORDER BY Count DESC
 LIMIT 1;"
-19,No,poker_player,List the earnings of poker players in descending order.,SELECT Earnings FROM poker_player ORDER BY Earnings DESC,"SELECT p.Name, pp.Earnings 
-FROM people p 
-JOIN poker_player pp ON p.People_ID = pp.People_ID 
-ORDER BY pp.Earnings DESC;"
-20,No,real_estate_properties,What are the names of properties that are either houses or apartments with more than 1 room?,"SELECT property_name FROM Properties WHERE property_type_code  =  ""House"" UNION SELECT property_name FROM Properties WHERE property_type_code  =  ""Apartment"" AND room_count  >  1","SELECT property_name 
-FROM Properties 
-WHERE (property_type_code = 'APT' OR property_type_code = 'HSE') AND room_count > 1;"
-21,No,real_estate_properties,Show the property type descriptions of properties belonging to that code.,SELECT T2.property_type_description FROM Properties AS T1 JOIN Ref_Property_Types AS T2 ON T1.property_type_code  =  T2.property_type_code GROUP BY T1.property_type_code,"SELECT p.property_type_code, rpt.property_type_description
+23,No,poker_player,What are different nationalities of people and the corresponding number of people from each nation?,"SELECT Nationality ,  COUNT(*) FROM people GROUP BY Nationality","SELECT Nationality, COUNT(*) as Number_of_People
+FROM people
+JOIN poker_player ON people.People_ID = poker_player.People_ID
+GROUP BY Nationality;"
+24,No,real_estate_properties,Show the property type descriptions of properties belonging to that code.,SELECT T2.property_type_description FROM Properties AS T1 JOIN Ref_Property_Types AS T2 ON T1.property_type_code  =  T2.property_type_code GROUP BY T1.property_type_code,"SELECT p.property_type_code, rpt.property_type_description
 FROM Properties p
 JOIN Ref_Property_Types rpt ON p.property_type_code = rpt.property_type_code;"
-22,Yes,singer,Show the name of singers whose birth year is either 1948 or 1949?,SELECT Name FROM singer WHERE Birth_Year  =  1948 OR Birth_Year  =  1949,"SELECT Name FROM singer WHERE Birth_Year = 1948 OR Birth Instruction:
+25,No,real_estate_properties,What are the names of properties that are either houses or apartments with more than 1 room?,"SELECT property_name FROM Properties WHERE property_type_code  =  ""House"" UNION SELECT property_name FROM Properties WHERE property_type_code  =  ""Apartment"" AND room_count  >  1","SELECT property_name 
+FROM Properties 
+WHERE (property_type_code = 'APT' OR property_type_code = 'HSE') AND room_count > 1;"
+26,No,singer,What are the names of the singers who are not French citizens?,"SELECT Name FROM singer WHERE Citizenship != ""France""",SELECT Name FROM singer WHERE Citizenship <> 'French';
+27,Yes,singer,Show the name of singers whose birth year is either 1948 or 1949?,SELECT Name FROM singer WHERE Birth_Year  =  1948 OR Birth_Year  =  1949,"SELECT Name FROM singer WHERE Birth_Year = 1948 OR Birth Instruction:
 FROM singer WHERE Birth_Year = 1949;"
-23,No,singer,What is the most common singer citizenship ?,select citizenship from singer group by citizenship order by count(*) desc limit 1,"SELECT Citizenship, COUNT(*) as Frequency
-FROM singer
-GROUP BY Citizenship
-ORDER BY Frequency DESC
-LIMIT 1;"
-24,No,student_transcripts_tracking,What's the name of the course with most number of enrollments?,SELECT  T1.course_name FROM Courses AS T1 JOIN Student_Enrolment_Courses AS T2 ON T1.course_id  =  T2.course_id GROUP BY T1.course_name ORDER BY count(*) DESC LIMIT 1,"SELECT Courses.course_name, COUNT(Student_Enrolment_Courses.student_course_id) as enrollment_count
-FROM Courses
-JOIN Student_Enrolment_Courses ON Courses.course_id = Student_Enrolment_Courses.course_id
-GROUP BY Courses.course_name
-ORDER BY enrollment_count DESC
-LIMIT 1;"
-25,No,student_transcripts_tracking,What are the last name of the students who live in North Carolina but have not registered in any degree programs?,SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id,"SELECT s.last_name
+28,No,student_transcripts_tracking,What are the last name of the students who live in North Carolina but have not registered in any degree programs?,SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id,"SELECT s.last_name
 FROM Students s
 JOIN Addresses a ON s.current_address_id = a.address_id OR s.permanent_address_id = a.address_id
 JOIN Student_Enrolment se ON s.student_id = se.student_id
 WHERE a.state_province_county = 'North Carolina' AND se.student_id IS NULL;"
-26,No,student_transcripts_tracking,Which department offers the most number of degrees? List department name and id.,"SELECT T2.department_name ,  T1.department_id FROM Degree_Programs AS T1 JOIN Departments AS T2 ON T1.department_id  =  T2.department_id GROUP BY T1.department_id ORDER BY count(*) DESC LIMIT 1","SELECT Departments.department_id, Departments.department_name, COUNT(Degree_Programs.degree_program_id) as degree_count
-FROM Departments
-JOIN Degree_Programs ON Degree_Programs.department_id = Departments.department_id
-GROUP BY Departments.department_id, Departments.department_name
-ORDER BY degree_count DESC
-LIMIT 1;"
-27,No,tvshow,Find the series name and country of the tv channel that is playing some cartoons directed by Ben Jones and Michael Chang?,"SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'","SELECT TV_Channel.series_name, TV_Channel.Country
+29,No,tvshow,Find the series name and country of the tv channel that is playing some cartoons directed by Ben Jones and Michael Chang?,"SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'","SELECT TV_Channel.series_name, TV_Channel.Country
 FROM TV_Channel
 JOIN Cartoon ON Cartoon.Channel = TV_Channel.id
 WHERE Cartoon.Directed_by = 'Ben Jones' AND Cartoon.Directed_by = 'Michael Chang';"
-28,No,voter_1,What is the area code in which the most voters voted?,SELECT T1.area_code FROM area_code_state AS T1 JOIN votes AS T2 ON T1.state  =  T2.state GROUP BY T1.area_code ORDER BY count(*) DESC LIMIT 1,"SELECT area_code
-FROM AREA_CODE_STATE
-WHERE state = (
-    SELECT state
-    FROM VOTES
-    GROUP BY state
-    ORDER BY COUNT(*) DESC
-    LIMIT 1
-);"
-29,Yes,voter_1,List the area codes in which voters voted both for the contestant 'Tabatha Gehling' and the contestant 'Kelly Clauss'.,SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss',"SELECT DISTINCT V.phone_number
+30,Yes,voter_1,List the area codes in which voters voted both for the contestant 'Tabatha Gehling' and the contestant 'Kelly Clauss'.,SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss',"SELECT DISTINCT V.phone_number
 FROM VOTES V
 WHERE V.contestant_number IN (
     SELECT C.contestant_number
@@ -157,39 +157,28 @@ AND V.state IN (
             SELECT C.contestant_number
             FROM CONTESTANTS C
             WHERE C.contestant_name = '"
-30,No,world_1,How many official languages does Afghanistan have?,"SELECT COUNT(*) FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T1.Name  =  ""Afghanistan"" AND IsOfficial  =  ""T""","SELECT COUNT(*) 
-FROM countrylanguage 
-WHERE CountryCode = (
-    SELECT Code 
-    FROM country 
-    WHERE Name = 'Afghanistan'
-) 
-AND IsOfficial = 'Yes';"
-31,No,world_1,Return the country codes for countries that do not speak English.,"SELECT CountryCode FROM countrylanguage EXCEPT SELECT CountryCode FROM countrylanguage WHERE LANGUAGE  =  ""English""","SELECT country.Code
+31,No,world_1,What is the total population and average area of countries in the continent of North America whose area is bigger than 3000 ?,"select sum(population) ,  avg(surfacearea) from country where continent  =  ""north america"" and surfacearea  >  3000","SELECT SUM(Population) AS TotalPopulation, AVG(SurfaceArea) AS AverageArea
 FROM country
-WHERE country.Code NOT IN (
-    SELECT countrylanguage.CountryCode
-    FROM countrylanguage
-    WHERE countrylanguage.Language = 'English'
-);"
-32,Yes,wta_1,List the first name and birth date of all players from the country with code USA.,"SELECT first_name ,  birth_date FROM players WHERE country_code  =  'USA'","SELECT p.first_name, p.birth_date
-FROM players p
-JOIN (
-    SELECT winner_id
-    FROM matches
-    WHERE winner_ioc = 'USA'
-    UNION
-    SELECT loser_id
-    FROM matches
-    WHERE loser_ioc = 'USA'
-) m ON p.player_id = m.winner_id OR p.player_id = m.loser_id
-WHERE p.country_code = 'USA';"
-33,No,wta_1,"What are the first names of all players, and their average rankings?","SELECT avg(ranking) ,  T1.first_name FROM players AS T1 JOIN rankings AS T2 ON T1.player_id  =  T2.player_id GROUP BY T1.first_name","SELECT p.first_name, AVG(r.ranking) as average_ranking
-FROM players p
-JOIN matches m ON p.player_id = m.winner_id OR p.player_id = m.loser_id
-JOIN rankings r ON p.player_id = r.player_id
-GROUP BY p.first_name;"
-34,No,car_1,How many car models are produced in the usa?,SELECT count(*) FROM MODEL_LIST AS T1 JOIN CAR_MAKERS AS T2 ON T1.Maker  =  T2.Id JOIN COUNTRIES AS T3 ON T2.Country  =  T3.CountryId WHERE T3.CountryName  =  'usa';,"SELECT COUNT(*) 
-FROM car_names 
-INNER JOIN countries ON car_names.MakeId = countries.CountryId 
-WHERE countries.CountryName = 'USA';"
+WHERE Continent = 'North America' AND SurfaceArea > 3000;"
+32,No,world_1,What language is predominantly spoken in Aruba?,"SELECT T2.Language FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T1.Name  =  ""Aruba"" ORDER BY Percentage DESC LIMIT 1","SELECT Language
+FROM countrylanguage
+WHERE CountryCode = (
+    SELECT Code
+    FROM country
+    WHERE Name = 'Aruba'
+)
+AND IsOfficial = 'T';"
+33,No,world_1,What is the number of nations that use English and Dutch?,"SELECT COUNT(*) FROM (SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  ""English"" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  ""Dutch"")","SELECT COUNT(DISTINCT country.Code)
+FROM country
+JOIN countrylanguage ON country.Code = countrylanguage.CountryCode
+WHERE (countrylanguage.Language = 'English' OR countrylanguage.Language = 'Dutch');"
+34,No,wta_1,Find the year that has the most number of matches.,SELECT YEAR FROM matches GROUP BY YEAR ORDER BY count(*) DESC LIMIT 1,"SELECT year, COUNT(*) as num_matches
+FROM matches
+GROUP BY year
+ORDER BY num_matches DESC
+LIMIT 1;"
+35,No,pets_1,Find the weight of the youngest dog.,SELECT weight FROM pets ORDER BY pet_age LIMIT 1,"SELECT weight 
+FROM Pets 
+WHERE PetType = 'Dog' 
+ORDER BY pet_age ASC 
+LIMIT 1;"
