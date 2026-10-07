@@ -15,12 +15,27 @@ import json
 import os
 import random
 import re
+import sqlite3
 from collections import defaultdict
 
 
 def _build_db_path(db_id: str, db_root: str) -> str:
     """Construct path to .sqlite file given db_id and root folder."""
     return os.path.join(db_root, db_id, f"{db_id}.sqlite")
+
+
+def _gold_has_result(sql: str, db_path: str) -> bool:
+    """Return False if gold SQL returns an empty result set (unreliable for eval)."""
+    if not os.path.exists(db_path):
+        return True  # can't verify — keep
+    try:
+        con = sqlite3.connect(db_path)
+        con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+        row = con.execute(sql).fetchone()
+        con.close()
+        return row is not None
+    except Exception:
+        return True  # execution error already filtered separately — keep
 
 
 def load_spider(
@@ -79,6 +94,7 @@ def load_spider_stratified(
     n_per_db: int | None = 5,
     seed: int = 42,
     balance_joins: bool = True,
+    filter_empty: bool = True,
 ) -> list[dict]:
     """
     Load Spider dataset with database and SQL-complexity stratification.
@@ -93,6 +109,8 @@ def load_spider_stratified(
         n_per_db: target samples per database (used if n_total is None)
         seed: random seed for reproducible selection
         balance_joins: if True, round-robins across join counts (0, 1, 2+) per DB
+        filter_empty: if True (default), exclude gold SQLs that return no rows —
+            these are unevaluable regardless of model output
 
     Returns:
         List of normalized records.
@@ -107,6 +125,13 @@ def load_spider_stratified(
 
     with open(os.path.join(spider_root, filename), encoding="utf-8") as f:
         raw = json.load(f)
+
+    # Remove gold SQLs that return no rows — unevaluable for any model
+    if filter_empty:
+        raw = [
+            row for row in raw
+            if _gold_has_result(row["query"], _build_db_path(row["db_id"], db_root))
+        ]
 
     db_groups = defaultdict(list)
     for row in raw:

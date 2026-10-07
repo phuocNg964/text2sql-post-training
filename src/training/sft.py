@@ -100,6 +100,11 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         else {"num_train_epochs": training_cfg["epochs"]}
     )
 
+    eval_steps   = training_cfg.get("eval_steps", None)
+    use_steps    = eval_steps is not None and max_steps <= 0
+    eval_strategy  = "steps" if use_steps else ("epoch" if max_steps <= 0 else "no")
+    save_strategy  = eval_strategy if max_steps <= 0 else "no"
+
     sft_config=SFTConfig(
         **epoch_args,
         per_device_train_batch_size=training_cfg["batch_size"],
@@ -115,8 +120,10 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         bf16=torch.cuda.is_bf16_supported(),
         fp16=not torch.cuda.is_bf16_supported(),
         optim=training_cfg["optim"],
-        eval_strategy="epoch" if max_steps <= 0 else "no",
-        save_strategy="epoch" if max_steps <= 0 else "no",
+        eval_strategy=eval_strategy,
+        save_strategy=save_strategy,
+        eval_steps=eval_steps if use_steps else None,
+        save_steps=eval_steps if use_steps else None,
         load_best_model_at_end=max_steps <= 0,
         metric_for_best_model="eval_loss",
         output_dir=output_cfg["dir"],
