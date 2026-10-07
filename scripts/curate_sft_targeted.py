@@ -43,7 +43,16 @@ from src.eval.executor import execute_sql
 
 MAX_CHARS          = int(2048 * 3.5)  # ~7168 chars; matches configs/sft.yaml token budget
 ANCHOR_SHARE       = 0.15            # fraction of N reserved for random anchor pool
-TOP_K_CATEGORIES   = 5               # only curate for the top-K most frequent failures
+TOP_K_CATEGORIES   = 3               # curate for all confirmed error categories in 6-category taxonomy
+
+VALID_ERROR_CATEGORIES = {
+    "SET_OPS_AVOIDANCE",
+    "COLUMN_EXISTENCE",
+    "SPURIOUS_JOIN",
+    "WRONG_JOIN_PATH",
+    "WRONG_COLUMN_SELECT",
+    "STRUCTURAL_MISC",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -57,68 +66,45 @@ def _sql(rec: dict) -> str:
 
 
 AST_FILTERS: dict[str, callable] = {
-    # Syntax errors have no valid training analogue; fall through to anchor pool.
-    "INVALID_SQL": lambda rec: False,
+    # 1. Gold uses set operations (EXCEPT, INTERSECT, UNION)
+    "SET_OPS_AVOIDANCE": lambda rec: bool(
+        re.search(r"\b(EXCEPT|INTERSECT|UNION)\b", _sql(rec))
+    ),
 
-    # Hallucinated join: model adds unnecessary JOINs. Gold is single-table (trains simplicity/no join).
-    "HALLUCINATED_JOIN": lambda rec: (
+    # 2. Schema linking: multi-table queries with explicit table/alias column qualification
+    "COLUMN_EXISTENCE": lambda rec: (
+        len(re.findall(r"\bJOIN\b", _sql(rec))) >= 1
+        and bool(re.search(r"\b[A-Za-z0-9_]+\.[A-Za-z0-9_]+\b", rec["gold_sql"]))
+    ),
+
+    # 3. Join restraint: queries touching only 1 table (teaches model not to add unnecessary joins)
+    "SPURIOUS_JOIN": lambda rec: (
         not bool(re.search(r"\bJOIN\b", _sql(rec)))
         and not bool(re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", _sql(rec)))
-        and not bool(re.search(r"\bIN\s*\(SELECT\b", _sql(rec)))
+        and not bool(re.search(r"\bIN\s*\(\s*SELECT\b", _sql(rec)))
+        and not bool(re.search(r"\bFROM\s+[A-Za-z0-9_]+\s*,\s*[A-Za-z0-9_]+", _sql(rec)))
     ),
 
-    # Nesting / set ops: IN/NOT IN/EXISTS subqueries or UNION/INTERSECT/EXCEPT.
-    "NESTING_SET_OPS": lambda rec: (
-        bool(re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", _sql(rec)))
-        or bool(re.search(r"\b(IN|NOT\s+IN|EXISTS)\s*\(\s*SELECT\b", _sql(rec)))
-    ),
-
-    # Schema linking: multi-table queries requiring precise column-to-table attribution.
-    "SCHEMA_LINKING": lambda rec: (
+    # 4. Multi-hop joins: >= 2 JOINs with explicit ON clauses across foreign key chains
+    "WRONG_JOIN_PATH": lambda rec: (
         len(re.findall(r"\bJOIN\b", _sql(rec))) >= 2
         and bool(re.search(r"\bON\b", _sql(rec)))
     ),
 
-    # Join errors: queries with >=2 JOINs, or JOIN with explicit ON predicate.
-    "JOIN": lambda rec: (
-        len(re.findall(r"\bJOIN\b", _sql(rec))) >= 2
-        or bool(re.search(r"\bJOIN\b.+\bON\b", _sql(rec), re.DOTALL))
+    # 5. Multi-column projection or DISTINCT queries
+    "WRONG_COLUMN_SELECT": lambda rec: (
+        bool(re.search(r"\bDISTINCT\b", _sql(rec)))
+        or len(rec["gold_sql"].split("FROM")[0].split(",")) >= 2
     ),
 
-    # Aggregation / grouping: GROUP BY, HAVING, or aggregate functions.
-    "AGGREGATION_GROUPING": lambda rec: (
-        bool(re.search(r"\bGROUP\s+BY\b", _sql(rec)))
-        or bool(re.search(r"\bHAVING\b", _sql(rec)))
-        or bool(re.search(r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(", _sql(rec)))
-    ),
-
-    # Filter condition: compound WHERE clause (AND/OR, negation, BETWEEN, LIKE,
-    # inequality operators).
-    "FILTER_CONDITION": lambda rec: bool(
-        re.search(
-            r"\bWHERE\b.+\b(AND|OR|NOT|BETWEEN|LIKE|!=|<>|>=|<=)\b",
-            _sql(rec),
-            re.DOTALL,
+    # 6. Aggregation structure: queries using HAVING or GROUP BY with aggregate functions
+    "STRUCTURAL_MISC": lambda rec: (
+        bool(re.search(r"\bHAVING\b", _sql(rec)))
+        or (
+            bool(re.search(r"\bGROUP\s+BY\b", _sql(rec)))
+            and bool(re.search(r"\b(COUNT|SUM|AVG|MIN|MAX)\b", _sql(rec)))
         )
     ),
-
-    # Distinct / duplicates: queries that contain DISTINCT.
-    "DISTINCT_DUPLICATES": lambda rec: bool(re.search(r"\bDISTINCT\b", _sql(rec))),
-
-    # Order / limit: queries with ORDER BY and/or LIMIT.
-    "ORDER_LIMIT": lambda rec: (
-        bool(re.search(r"\bORDER\s+BY\b", _sql(rec)))
-        or bool(re.search(r"\bLIMIT\b", _sql(rec)))
-    ),
-
-    # Output shape: SELECT list with >=3 columns (exercises multi-column selection).
-    "OUTPUT_SHAPE": lambda rec: (
-        _sql(rec).startswith("SELECT")
-        and len(re.split(r",", _sql(rec).split("FROM")[0])) >= 3
-    ),
-
-    # Miscellaneous: no specific structural signature -- accept any query.
-    "MISCELLANEOUS": lambda rec: True,
 }
 
 
@@ -127,14 +113,13 @@ AST_FILTERS: dict[str, callable] = {
 # ---------------------------------------------------------------------------
 
 def load_error_categories(errors_csv: str) -> list[tuple[str, int]]:
-    """Return all confirmed ERROR categories and their counts, sorted by count desc."""
+    """Return all confirmed error categories and their counts, sorted by count desc."""
     counts: dict[str, int] = defaultdict(int)
     with open(errors_csv, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            if row["Verdict"].strip() == "ERROR":
-                cat = row["Category"].strip()
-                if cat:
-                    counts[cat] += 1
+            err = row.get("primary_error", "").strip()
+            if err in VALID_ERROR_CATEGORIES:
+                counts[err] += 1
     return sorted(counts.items(), key=lambda x: x[1], reverse=True)
 
 
@@ -276,7 +261,7 @@ def main() -> None:
     # 1. Load error distribution (top-K only)
     error_cats = load_error_categories(args.errors_csv)[:TOP_K_CATEGORIES]
     if not error_cats:
-        sys.exit(f"No ERROR rows found in {args.errors_csv}. Run error_analysis_new.py first.")
+        sys.exit(f"No confirmed error rows found in {args.errors_csv}. Run scripts/error_analysis.py first.")
 
     total_errors = sum(n for _, n in error_cats)
     targeted_n   = round(args.n * (1.0 - args.anchor_share))

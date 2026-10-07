@@ -14,7 +14,7 @@ Non-error verdicts stored in primary_error:
   GOLD_ISSUE         — gold SQL is wrong or question is unanswerable
 
 Output fields per row:
-  primary_error, mechanism, evidence, gold_usable, sft_action,
+  primary_error, mechanism, evidence,
   Judge_Model, Prompt_Version
 
 Usage:
@@ -63,9 +63,6 @@ ACCEPTABLE_VARIANT = "ACCEPTABLE_VARIANT"
 GOLD_ISSUE = "GOLD_ISSUE"
 
 ALL_PRIMARY_ERROR_VALUES = CATEGORY_IDS + (ACCEPTABLE_VARIANT, GOLD_ISSUE)
-
-# sft_action valid values
-SFT_ACTIONS = ("USE_AS_IS", "FLIP_PRED_TO_GOLD", "DISCARD", "NEEDS_REWRITE")
 
 PARSE_ERROR = "parse_error"
 
@@ -136,20 +133,12 @@ OUTPUT FIELDS
                  WRONG_COLUMN_SELECT | STRUCTURAL_MISC | ACCEPTABLE_VARIANT | GOLD_ISSUE
 - mechanism: one sentence describing exactly what went wrong (or why it is valid/gold-issue)
 - evidence: the exact SQL clause or token that shows the problem (≤ 20 words)
-- gold_usable: true if the gold SQL is trustworthy for SFT; false if it is wrong or ambiguous
-- sft_action: USE_AS_IS | FLIP_PRED_TO_GOLD | DISCARD | NEEDS_REWRITE
-    USE_AS_IS        — gold is correct; use (question, gold_sql) as SFT example
-    FLIP_PRED_TO_GOLD — prediction is correct/better; use (question, predicted_sql) instead
-    DISCARD          — gold is wrong and not easily repairable, or question is unanswerable
-    NEEDS_REWRITE    — question is valid but gold needs manual correction before SFT use
 
 Return ONLY one JSON object, no markdown fences, no extra text:
 {
   "primary_error": "...",
   "mechanism": "...",
-  "evidence": "...",
-  "gold_usable": true | false,
-  "sft_action": "..."
+  "evidence": "..."
 }"""
 
 PROMPT_VERSION = hashlib.sha1(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:8]
@@ -299,7 +288,7 @@ def _extract_json(text: str) -> dict:
 def _parse_response(raw: str) -> dict:
     data = _extract_json(raw)
 
-    for key in ("primary_error", "mechanism", "evidence", "gold_usable", "sft_action"):
+    for key in ("primary_error", "mechanism", "evidence"):
         if key not in data:
             raise ValueError(f"Missing key: {key}")
 
@@ -307,19 +296,10 @@ def _parse_response(raw: str) -> dict:
     if primary_error not in ALL_PRIMARY_ERROR_VALUES:
         raise ValueError(f"Unknown primary_error: {primary_error!r}")
 
-    if not isinstance(data["gold_usable"], bool):
-        raise ValueError("gold_usable must be boolean")
-
-    sft_action = str(data["sft_action"]).strip()
-    if sft_action not in SFT_ACTIONS:
-        raise ValueError(f"Unknown sft_action: {sft_action!r}")
-
     return {
         "primary_error": primary_error,
         "mechanism": str(data["mechanism"]).strip(),
         "evidence": str(data["evidence"]).strip(),
-        "gold_usable": str(data["gold_usable"]),
-        "sft_action": sft_action,
     }
 
 
@@ -353,8 +333,6 @@ def classify(client: Groq, row: dict, schema_str: str, ev: ExecEvidence) -> dict
             "primary_error": "STRUCTURAL_MISC",
             "mechanism": f"Predicted SQL is syntactically invalid: {ev.pred_error[:80]}",
             "evidence": ev.pred_error[:60],
-            "gold_usable": "True",
-            "sft_action": "USE_AS_IS",
             "judge_model": "local",
         }
 
@@ -374,8 +352,6 @@ def classify(client: Groq, row: dict, schema_str: str, ev: ExecEvidence) -> dict
         "primary_error": PARSE_ERROR,
         "mechanism": str(last_exc)[:200],
         "evidence": "",
-        "gold_usable": "",
-        "sft_action": "",
         "judge_model": "",
     }
 
@@ -384,7 +360,7 @@ def classify(client: Groq, row: dict, schema_str: str, ev: ExecEvidence) -> dict
 # CSV helpers: resume, summary
 # ---------------------------------------------------------------------------
 
-OUT_COLS = ("primary_error", "mechanism", "evidence", "gold_usable", "sft_action",
+OUT_COLS = ("primary_error", "mechanism", "evidence",
             "Judge_Model", "Prompt_Version")
 REQUIRED_COLS = ("Question", "Gold SQL", "Predicted SQL", "DB")
 
@@ -423,17 +399,6 @@ def print_summary(results: list[dict]) -> None:
     print("-" * 60)
     for val, n in Counter(r["primary_error"] for r in results).most_common():
         print(f"  {val:<25} {n:>5}  {n / total:>6.1%}")
-
-    if errors:
-        print()
-        print(f"  SFT actions (errors only):")
-        print("-" * 60)
-        for action, n in Counter(r["sft_action"] for r in errors).most_common():
-            print(f"  {action:<25} {n:>5}  {n / len(errors):>6.1%}")
-
-    gold_not_usable = sum(r.get("gold_usable") == "False" for r in results)
-    print()
-    print(f"  gold_usable=False: {gold_not_usable}/{total} ({gold_not_usable / total:.1%})")
 
     fallback = sum(r.get("Judge_Model") == FALLBACK_MODEL for r in results)
     if fallback:
@@ -533,8 +498,6 @@ def main() -> None:
                     "primary_error": result["primary_error"],
                     "mechanism":     result["mechanism"],
                     "evidence":      result["evidence"],
-                    "gold_usable":   result["gold_usable"],
-                    "sft_action":    result["sft_action"],
                     "Judge_Model":   result["judge_model"],
                     "Prompt_Version": PROMPT_VERSION,
                 })
