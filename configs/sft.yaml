@@ -27,6 +27,7 @@ training:
   weight_decay: 0.01          # light regularization on LoRA adapter weights
   optim: "adamw_8bit"
   seed: 42
+  eval_steps: 20              # evaluate every 20 steps (~3x per epoch) to catch overfitting early
 
 data:
   train_path: "data/sft_targeted_train.jsonl"   # targeted AST-filtered curation

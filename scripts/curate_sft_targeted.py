@@ -42,8 +42,8 @@ from src.data.sft_formatter import format_for_sft
 from src.eval.executor import execute_sql
 
 MAX_CHARS          = int(2048 * 3.5)  # ~7168 chars; matches configs/sft.yaml token budget
-ANCHOR_SHARE       = 0.2             # fraction of N reserved for random anchor pool
-TOP_K_CATEGORIES   = 2               # only curate for the top-K most frequent failures
+ANCHOR_SHARE       = 0.15            # fraction of N reserved for random anchor pool
+TOP_K_CATEGORIES   = 5               # only curate for the top-K most frequent failures
 
 
 # ---------------------------------------------------------------------------
@@ -60,11 +60,23 @@ AST_FILTERS: dict[str, callable] = {
     # Syntax errors have no valid training analogue; fall through to anchor pool.
     "INVALID_SQL": lambda rec: False,
 
-    # Schema linking: queries spanning >=2 tables (JOIN present) OR using
-    # sub-selects that require precise column-to-table attribution.
+    # Hallucinated join: model adds unnecessary JOINs. Gold is single-table (trains simplicity/no join).
+    "HALLUCINATED_JOIN": lambda rec: (
+        not bool(re.search(r"\bJOIN\b", _sql(rec)))
+        and not bool(re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", _sql(rec)))
+        and not bool(re.search(r"\bIN\s*\(SELECT\b", _sql(rec)))
+    ),
+
+    # Nesting / set ops: IN/NOT IN/EXISTS subqueries or UNION/INTERSECT/EXCEPT.
+    "NESTING_SET_OPS": lambda rec: (
+        bool(re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", _sql(rec)))
+        or bool(re.search(r"\b(IN|NOT\s+IN|EXISTS)\s*\(\s*SELECT\b", _sql(rec)))
+    ),
+
+    # Schema linking: multi-table queries requiring precise column-to-table attribution.
     "SCHEMA_LINKING": lambda rec: (
-        bool(re.search(r"\bJOIN\b", _sql(rec)))
-        or bool(re.search(r"\bIN\s*\(SELECT\b", _sql(rec)))
+        len(re.findall(r"\bJOIN\b", _sql(rec))) >= 2
+        and bool(re.search(r"\bON\b", _sql(rec)))
     ),
 
     # Join errors: queries with >=2 JOINs, or JOIN with explicit ON predicate.
@@ -78,12 +90,6 @@ AST_FILTERS: dict[str, callable] = {
         bool(re.search(r"\bGROUP\s+BY\b", _sql(rec)))
         or bool(re.search(r"\bHAVING\b", _sql(rec)))
         or bool(re.search(r"\b(COUNT|SUM|AVG|MIN|MAX)\s*\(", _sql(rec)))
-    ),
-
-    # Nesting / set ops: IN/NOT IN/EXISTS subqueries or UNION/INTERSECT/EXCEPT.
-    "NESTING_SET_OPS": lambda rec: (
-        bool(re.search(r"\b(IN|NOT\s+IN|EXISTS)\s*\(\s*SELECT\b", _sql(rec)))
-        or bool(re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", _sql(rec)))
     ),
 
     # Filter condition: compound WHERE clause (AND/OR, negation, BETWEEN, LIKE,
@@ -261,6 +267,8 @@ def main() -> None:
                         help="Raw dev set to format for SFT eval")
     parser.add_argument("--out_train",  default="data/sft_targeted_train.jsonl")
     parser.add_argument("--out_eval",   default="data/sft_eval.jsonl")
+    parser.add_argument("--anchor_share", type=float, default=ANCHOR_SHARE,
+                        help="Fraction of N reserved for random anchor pool (default: 0.15)")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -271,17 +279,20 @@ def main() -> None:
         sys.exit(f"No ERROR rows found in {args.errors_csv}. Run error_analysis_new.py first.")
 
     total_errors = sum(n for _, n in error_cats)
-    targeted_n   = round(args.n * (1.0 - ANCHOR_SHARE))
+    targeted_n   = round(args.n * (1.0 - args.anchor_share))
     random_n     = args.n - targeted_n
 
-    # Proportional quotas; last category absorbs rounding remainder
-    per_cat_quotas = [round(targeted_n * n / total_errors) for _, n in error_cats]
-    per_cat_quotas[-1] += targeted_n - sum(per_cat_quotas)
-
     print(f"Error categories ({total_errors} total confirmed errors):")
-    for (cat, n_err), quota in zip(error_cats, per_cat_quotas):
-        print(f"  {cat:<25} errors={n_err:>3}  quota={quota:>4}  ({n_err / total_errors:.1%})")
-    print(f"  {'[anchor/random]':<25}              quota={random_n:>4}  ({ANCHOR_SHARE:.1%})")
+    if targeted_n > 0:
+        # Proportional quotas based on natural error distribution; last category absorbs rounding remainder
+        per_cat_quotas = [round(targeted_n * n / total_errors) for _, n in error_cats]
+        per_cat_quotas[-1] += targeted_n - sum(per_cat_quotas)
+        for (cat, n_err), quota in zip(error_cats, per_cat_quotas):
+            print(f"  {cat:<25} errors={n_err:>3}  quota={quota:>4}  ({quota / targeted_n:.1%})")
+    else:
+        per_cat_quotas = [0] * len(error_cats)
+        print("  (targeted_n=0: fully random mode, error categories ignored)")
+    print(f"  {'[anchor/random]':<25}              quota={random_n:>4}  ({random_n / args.n:.1%})")
     print()
 
     # 2. Load full Spider train pool once
@@ -292,6 +303,8 @@ def main() -> None:
     category_results: list[list[dict]] = []
 
     for (cat_name, _), quota in zip(error_cats, per_cat_quotas):
+        if quota == 0:
+            continue
         collected, failures = collect_category(pool, cat_name, quota, global_seen, rng, cat_name)
         category_results.append(collected)
         status   = f"{len(collected)}/{quota}"
