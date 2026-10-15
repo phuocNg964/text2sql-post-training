@@ -6,7 +6,7 @@ model:
 lora:
   r: 16
   alpha: 32                   # 2 × r (standard heuristic)
-  dropout: 0                  # 0 enables Unsloth's faster internal path
+  dropout: 0
   bias: "none"
   target_modules:             # all major linear layers (Unsloth docs)
     - q_proj
@@ -21,13 +21,13 @@ training:
   epochs: 3
   batch_size: 2
   grad_accum: 8               # effective batch = batch_size × grad_accum = 16
-  learning_rate: 2.0e-4
+  learning_rate: 1.0e-4
   lr_scheduler: "cosine"
   warmup_ratio: 0.05          # 5% of total steps
-  weight_decay: 0.01          # light regularization on LoRA adapter weights
+  weight_decay: 0.05          # light regularization on LoRA adapter weights
   optim: "adamw_8bit"
   seed: 42
-  eval_steps: 20              # evaluate every 20 steps (~3x per epoch) to catch overfitting early
+  eval_steps: 50              # evaluate every 50 steps (~2-3x per epoch) — enough to spot overfitting trend
 
 data:
   train_path: "data/sft_targeted_train.jsonl"   # targeted AST-filtered curation

@@ -1,0 +1,127 @@
+#,Invalid?,DB,Question,Gold SQL,Predicted SQL,primary_error,mechanism,evidence,Judge_Model,Prompt_Version
+1,No,battle_death,"Show names, results and bulgarian commanders of the battles with no ships lost in the 'English Channel'.","SELECT name ,  RESULT ,  bulgarian_commander FROM battle EXCEPT SELECT T1.name ,  T1.result ,  T1.bulgarian_commander FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle WHERE T2.location  =  'English Channel'","SELECT T1.name, T1.result, T1.bulgarian_commander
+FROM battle AS T1
+JOIN ship AS T2 ON T1.id = T2.lost_in_battle
+WHERE T2.location != 'English Channel';",SET_OPS_AVOIDANCE,"The prediction avoided the EXCEPT set operation used in the gold query, replacing it with a join and inequality, which cannot correctly express “battles with no ships lost in the English Channel”.",WHERE T2.location != 'English Channel',openai/gpt-oss-120b,34851e0c
+2,No,battle_death,What are the ids and names of the battles that led to more than 10 people killed in total.,"SELECT T1.id ,  T1.name FROM battle AS T1 JOIN ship AS T2 ON T1.id  =  T2.lost_in_battle JOIN death AS T3 ON T2.id  =  T3.caused_by_ship_id GROUP BY T1.id HAVING sum(T3.killed)  >  10","SELECT b.id, b.name
+FROM battle b
+JOIN death d ON b.id = d.caused_by_ship_id
+GROUP BY b.id, b.name
+HAVING SUM(d.killed) > 10;",WRONG_JOIN_PATH,"The prediction joins death directly to battle on b.id = d.caused_by_ship_id, skipping the required ship table and using the wrong foreign‑key relationship.",JOIN death d ON b.id = d.caused_by_ship_id,openai/gpt-oss-120b,34851e0c
+3,No,battle_death,What are the death and injury situations caused by the ship with tonnage 't'?,"SELECT T1.killed ,  T1.injured FROM death AS T1 JOIN ship AS t2 ON T1.caused_by_ship_id  =  T2.id WHERE T2.tonnage  =  't'","SELECT d.note, d.killed, d.injured
+FROM death d
+JOIN ship s ON d.caused_by_ship_id = s.id
+WHERE s.tonnage = 't';",WRONG_COLUMN_SELECT,The prediction selects the extra column 'note' which is not asked for.,"SELECT d.note, d.killed, d.injured",openai/gpt-oss-120b,34851e0c
+4,Yes,car_1,"For the cars with 4 cylinders, which model has the largest horsepower?",SELECT T1.Model FROM CAR_NAMES AS T1 JOIN CARS_DATA AS T2 ON T1.MakeId  =  T2.Id WHERE T2.Cylinders  =  4 ORDER BY T2.horsepower DESC LIMIT 1;,SELECT T2.Model FROM cars_data AS T1 INNER JOIN car_names AS T2 ON T1.MakeId = T2.MakeId WHERE T1.Cylinders = 4 ORDER BY T1.Horsepower DESC LIMIT 1;,COLUMN_EXISTENCE,The prediction references a column (MakeId) that does not exist in the cars_data table.,ON T1.MakeId = T2.MakeId,openai/gpt-oss-120b,34851e0c
+5,Yes,car_1,Which distinctive models are produced by maker with the full name General Motors or weighing more than 3500?,SELECT DISTINCT T2.Model FROM CAR_NAMES AS T1 JOIN MODEL_LIST AS T2 ON T1.Model  =  T2.Model JOIN CAR_MAKERS AS T3 ON T2.Maker  =  T3.Id JOIN CARS_DATA AS T4 ON T1.MakeId  =  T4.Id WHERE T3.FullName  =  'General Motors' OR T4.weight  >  3500;,SELECT DISTINCT T2.Model FROM car_makers AS T1 INNER JOIN car_names AS T2 ON T1.Id = T2.MakeId INNER JOIN cars_data AS T3 ON T2.MakeId = T3.MakeId WHERE T1.FullName = 'General Motors' OR T3.Weight > 3500;,COLUMN_EXISTENCE,"The predicted query references a column MakeId in the cars_data table, which does not exist in the schema.",T3.MakeId,openai/gpt-oss-120b,34851e0c
+6,Yes,car_1,What is the model for the car with a weight smaller than the average?,SELECT T1.model FROM CAR_NAMES AS T1 JOIN CARS_DATA AS T2 ON T1.MakeId  =  T2.Id WHERE T2.Weight  <  (SELECT avg(Weight) FROM CARS_DATA),SELECT T2.Model FROM cars_data AS T1 INNER JOIN car_names AS T2 ON T1.MakeId = T2.MakeId WHERE T1.Weight < (SELECT AVG(Weight) FROM cars_data),COLUMN_EXISTENCE,"The predicted query references column MakeId in the cars_data table, which does not exist in the schema.",ON T1.MakeId = T2.MakeId,openai/gpt-oss-120b,34851e0c
+7,No,concert_singer,List all song names by singers above the average age.,SELECT song_name FROM singer WHERE age  >  (SELECT avg(age) FROM singer),"SELECT s.Song_Name 
+FROM singer s 
+JOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID 
+JOIN concert c ON sic.concert_ID = c.concert_ID 
+WHERE s.Age > (SELECT AVG(Age) FROM singer)",SPURIOUS_JOIN,"The prediction adds unnecessary joins to singer_in_concert and concert, which can exclude singers without concerts.",JOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID JOIN concert c ON sic.concert_ID = c.concert_ID,openai/gpt-oss-120b,34851e0c
+8,No,concert_singer,List all singer names in concerts in year 2014.,SELECT T2.name FROM singer_in_concert AS T1 JOIN singer AS T2 ON T1.singer_id  =  T2.singer_id JOIN concert AS T3 ON T1.concert_id  =  T3.concert_id WHERE T3.year  =  2014,"SELECT DISTINCT s.Name 
+FROM singer s 
+JOIN singer_in_concert sic ON s.Singer_ID = sic.Singer_ID 
+JOIN concert c ON sic.concert_ID = c.concert_ID 
+WHERE c.Year = '2014';",ACCEPTABLE_VARIANT,The prediction returns the same singer names for 2014; the added DISTINCT and string literal do not change semantics.,SELECT DISTINCT s.Name ... WHERE c.Year = '2014',openai/gpt-oss-120b,34851e0c
+9,No,course_teach,What is the age and hometown of every teacher?,"SELECT Age ,  Hometown FROM teacher","SELECT T1.Age, T1.Hometown FROM teacher AS T1 INNER JOIN course_arrange AS T2 ON T1.Teacher_ID = T2.Teacher_ID",SPURIOUS_JOIN,"The prediction adds an unnecessary join to course_arrange, which is not required to retrieve each teacher's age and hometown.",INNER JOIN course_arrange AS T2 ON T1.Teacher_ID = T2.Teacher_ID,openai/gpt-oss-120b,34851e0c
+10,Yes,course_teach,What is the name of each teacher and what course they teach?,"SELECT T3.Name ,  T2.Course FROM course_arrange AS T1 JOIN course AS T2 ON T1.Course_ID  =  T2.Course_ID JOIN teacher AS T3 ON T1.Teacher_ID  =  T3.Teacher_ID","SELECT T1.Name, T2.Course FROM teacher AS T1 INNER JOIN course_arrange AS T2 ON T1.Teacher_ID = T2.Teacher_ID INNER JOIN course AS T3 ON T2.Course_ID = T3.Course_ID;",COLUMN_EXISTENCE,"The prediction selects T2.Course, but the alias T2 (course_arrange) has no Course column.","SELECT T1.Name, T2.Course",openai/gpt-oss-120b,34851e0c
+11,Yes,dog_kennels,List the first name of all the professionals along with the description of the treatment they have done.,"SELECT DISTINCT T1.first_name ,  T3.treatment_type_description FROM professionals AS T1 JOIN Treatments AS T2 ON T1.professional_id  =  T2.professional_id JOIN Treatment_types AS T3 ON T2.treatment_type_code  =  T3.treatment_type_code","SELECT T3.first_name, T4.treatment_type_description
+FROM Treatments AS T1
+JOIN Professionals AS T2 ON T1.professional_id = T2.professional_id
+JOIN Treatment_Types AS T4 ON T1.treatment_type_code = T4.treatment_type_code;",COLUMN_EXISTENCE,"The query selects T3.first_name, but alias T3 is never defined, so the column reference is invalid.",SELECT T3.first_name,openai/gpt-oss-120b,34851e0c
+12,No,flight_2,Which airline has most number of flights?,SELECT T1.Airline FROM AIRLINES AS T1 JOIN FLIGHTS AS T2 ON T1.uid  =  T2.Airline GROUP BY T1.Airline ORDER BY count(*) DESC LIMIT 1,SELECT Airline FROM flights GROUP BY Airline ORDER BY COUNT(*) DESC LIMIT 1;,WRONG_COLUMN_SELECT,"The prediction selects the Airline ID from flights instead of the airline name, omitting the required join to the airlines table.",SELECT Airline FROM flights,openai/gpt-oss-120b,34851e0c
+13,No,museum_visit,"What are the id, name and membership level of visitors who have spent the largest amount of money in total in all museum tickets?","SELECT t2.visitor_id ,  t1.name ,  t1.Level_of_membership FROM visitor AS t1 JOIN visit AS t2 ON t1.id  =  t2.visitor_id GROUP BY t2.visitor_id ORDER BY sum(t2.Total_spent) DESC LIMIT 1","SELECT v.ID, v.Name, v.Level_of_membership
+FROM visitor v
+JOIN visit vi ON v.ID = vi.visitor_ID
+WHERE vi.Total_spent = (
+    SELECT MAX(Total_spent)
+    FROM visit
+);",STRUCTURAL_MISC,"Uses an aggregate (MAX) in the WHERE clause, comparing a single visit's spend instead of the visitor's total sum",WHERE vi.Total_spent = (SELECT MAX(Total_spent) FROM visit),openai/gpt-oss-120b,34851e0c
+14,No,network_1,What are the ids of students who both have friends and are liked?,SELECT student_id FROM Friend INTERSECT SELECT liked_id FROM Likes,SELECT student_id FROM Friend INTERSECT SELECT student_id FROM Likes;,WRONG_COLUMN_SELECT,The prediction selects the wrong column from Likes (student_id instead of liked_id).,SELECT student_id FROM Likes,openai/gpt-oss-120b,34851e0c
+15,Yes,network_1,What are the names of high schoolers who both have friends and are liked?,SELECT T2.name FROM Friend AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id INTERSECT SELECT T2.name FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.liked_id  =  T2.id,"SELECT DISTINCT T3.name 
+FROM Friend AS T1 
+JOIN Highschooler AS T2 ON T1.friend_id = T2.ID 
+JOIN Likes AS T3 ON T1.student_id = T3.student_id 
+WHERE T2.name IN (
+    SELECT T4.name 
+    FROM Friend AS T5 
+    JOIN Highschooler AS T6 ON T5.student_id = T6.ID 
+    WHERE T6.name IN (
+        SELECT T7.name 
+        FROM Likes AS T8 
+        JOIN Highschooler AS T9 ON T8.liked_id = T9.ID 
+        GROUP BY T9.name 
+        HAVING COUNT(T8.student_id) > 0
+    )
+)",SET_OPS_AVOIDANCE,The gold query uses INTERSECT while the prediction attempts a join-based rewrite without a set operation.,INTERSECT in gold SQL,openai/gpt-oss-120b,34851e0c
+16,No,network_1,"What are the names of high schoolers who have likes, and how many likes does each have?","SELECT T2.name ,  count(*) FROM Likes AS T1 JOIN Highschooler AS T2 ON T1.student_id  =  T2.id GROUP BY T1.student_id","SELECT H.name, COUNT(L.liked_id) AS num_likes
+FROM Highschooler H
+JOIN Likes L ON H.ID = L.student_id
+GROUP BY H.name;",STRUCTURAL_MISC,"The query groups by H.name instead of the unique student_id, causing merged counts for duplicate names.",GROUP BY H.name,openai/gpt-oss-120b,34851e0c
+17,No,orchestra,What is the name of the conductor who has conducted the most orchestras?,SELECT T1.Name FROM conductor AS T1 JOIN orchestra AS T2 ON T1.Conductor_ID  =  T2.Conductor_ID GROUP BY T2.Conductor_ID ORDER BY COUNT(*) DESC LIMIT 1,"SELECT c.Name
+FROM conductor c
+JOIN orchestra o ON c.Conductor_ID = o.Conductor_ID
+GROUP BY c.Name
+ORDER BY COUNT(o.Orchestra_ID) DESC
+LIMIT 1;",ACCEPTABLE_VARIANT,The prediction is semantically equivalent to the gold query; grouping by conductor name yields the same most‑frequent conductor.,GROUP BY c.Name,openai/gpt-oss-120b,34851e0c
+18,No,pets_1,Find the average and maximum age for each type of pet.,"SELECT avg(pet_age) ,  max(pet_age) ,  pettype FROM pets GROUP BY pettype","SELECT p.PetType, AVG(s.Age) AS AverageAge, MAX(s.Age) AS MaxAge
+FROM Has_Pet hp
+JOIN Student s ON hp.StuID = s.StuID
+JOIN Pets p ON hp.PetID = p.PetID
+GROUP BY p.PetType;",SPURIOUS_JOIN,"The prediction joins Student and Has_Pet tables that are not needed, and removing them would yield a correct query on Pets alone.",JOIN Student s ON hp.StuID = s.StuID,openai/gpt-oss-120b,34851e0c
+19,Yes,pets_1,Find the number of dog pets that are raised by female students (with sex F).,SELECT count(*) FROM student AS T1 JOIN has_pet AS T2 ON T1.stuid  =  T2.stuid JOIN pets AS T3 ON T2.petid  =  T3.petid WHERE T1.sex  =  'F' AND T3.pettype  =  'dog',"SELECT COUNT(PetID) 
+FROM Has_Pet 
+JOIN Student ON Has_Pet.StuID = Student.StuID 
+JOIN Pets ON Has_Pet.PetID = Pets.PetID 
+WHERE Student.Sex = 'F' AND Pets.PetType = 'Dog';",STRUCTURAL_MISC,"The SELECT clause references PetID without qualifying the table, causing an ambiguous column error.",SELECT COUNT(PetID) – ambiguous column name,openai/gpt-oss-120b,34851e0c
+20,No,real_estate_properties,Show the property type descriptions of properties belonging to that code.,SELECT T2.property_type_description FROM Properties AS T1 JOIN Ref_Property_Types AS T2 ON T1.property_type_code  =  T2.property_type_code GROUP BY T1.property_type_code,SELECT T2.property_type_description FROM Properties AS T1 INNER JOIN Ref_Property_Types AS T2 ON T1.property_type_code = T2.property_type_code WHERE T1.property_type_code = 'SINGLE_FAMILY';,STRUCTURAL_MISC,"The prediction adds an unnecessary WHERE clause restricting to a specific code, altering the result set.",WHERE T1.property_type_code = 'SINGLE_FAMILY',openai/gpt-oss-120b,34851e0c
+21,No,real_estate_properties,What are the names of properties that are either houses or apartments with more than 1 room?,"SELECT property_name FROM Properties WHERE property_type_code  =  ""House"" UNION SELECT property_name FROM Properties WHERE property_type_code  =  ""Apartment"" AND room_count  >  1","SELECT p.property_name 
+FROM Properties p 
+JOIN Ref_Property_Types pt ON p.property_type_code = pt.property_type_code 
+WHERE pt.property_type_description IN ('House', 'Apartment') AND p.room_count > 1;",SET_OPS_AVOIDANCE,"The gold query uses a UNION set operation, but the prediction rewrites it as a single SELECT without using UNION.",Gold SQL contains UNION; predicted SQL has no UNION,openai/gpt-oss-120b,34851e0c
+22,No,singer,What are the names of the singers who are not French citizens?,"SELECT Name FROM singer WHERE Citizenship != ""France""",SELECT Name FROM singer WHERE Citizenship != 'French';,STRUCTURAL_MISC,The WHERE clause compares Citizenship to the wrong literal ('French' instead of the correct country name).,WHERE Citizenship != 'French',openai/gpt-oss-120b,34851e0c
+23,Yes,singer,Show the names of singers and the total sales of their songs.,"SELECT T1.Name ,  sum(T2.Sales) FROM singer AS T1 JOIN song AS T2 ON T1.Singer_ID  =  T2.Singer_ID GROUP BY T1.Name","SELECT s.Name, SUM(s.Sales) AS Total_Sales
+FROM singer s
+JOIN song ON s.Singer_ID = song.Singer_ID
+GROUP BY s.Name;",COLUMN_EXISTENCE,"The prediction references the column Sales on alias s (singer), which does not have a Sales column.",SUM(s.Sales),openai/gpt-oss-120b,34851e0c
+24,Yes,student_transcripts_tracking,"Show the date of the transcript which shows the least number of results, also list the id.","SELECT T2.transcript_date ,  T1.transcript_id FROM Transcript_Contents AS T1 JOIN Transcripts AS T2 ON T1.transcript_id  =  T2.transcript_id GROUP BY T1.transcript_id ORDER BY count(*) ASC LIMIT 1","SELECT T2.transcript_date, T2.transcript_id
+FROM (
+    SELECT COUNT(*) AS result_count
+    FROM Student_Enrolment_Courses
+    GROUP BY student_course_id
+) AS T1
+JOIN Transcript_Contents AS T2 ON T1.student_course_id = T2.student_course_id
+ORDER BY result_count ASC
+LIMIT 1;",COLUMN_EXISTENCE,"The prediction selects transcript_date from alias T2, which refers to Transcript_Contents that does not have this column.",SELECT T2.transcript_date,openai/gpt-oss-120b,34851e0c
+25,No,student_transcripts_tracking,What are the last name of the students who live in North Carolina but have not registered in any degree programs?,SELECT T1.last_name FROM Students AS T1 JOIN Addresses AS T2 ON T1.current_address_id  =  T2.address_id WHERE T2.state_province_county  =  'NorthCarolina' EXCEPT SELECT DISTINCT T3.last_name FROM Students AS T3 JOIN Student_Enrolment AS T4 ON T3.student_id  =  T4.student_id,SELECT T1.last_name FROM Students AS T1 INNER JOIN Addresses AS T2 ON T1.permanent_address_id = T2.address_id WHERE T2.state_province_county = 'North Carolina' AND T1.student_id NOT IN (SELECT student_id FROM Student_Enrolment),SET_OPS_AVOIDANCE,"The gold query uses an EXCEPT set operation, but the prediction rewrites it without EXCEPT.",Gold uses EXCEPT; prediction has no EXCEPT clause,openai/gpt-oss-120b,34851e0c
+26,No,tvshow,Find the series name and country of the tv channel that is playing some cartoons directed by Ben Jones and Michael Chang?,"SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Michael Chang' INTERSECT SELECT T1.series_name ,  T1.country FROM TV_Channel AS T1 JOIN cartoon AS T2 ON T1.id = T2.Channel WHERE T2.directed_by  =  'Ben Jones'","SELECT T2.series_name, T2.Country 
+FROM Cartoon AS T1 
+JOIN TV_Channel AS T2 ON T1.Channel = T2.id 
+WHERE T1.Directed_by IN ('Ben Jones', 'Michael Chang');",SET_OPS_AVOIDANCE,"The prediction replaces the INTERSECT set operation with a single IN filter, so it returns channels with cartoons by either director instead of requiring both directors.","Gold uses INTERSECT; prediction uses WHERE T1.Directed_by IN ('Ben Jones', 'Michael Chang')",openai/gpt-oss-120b,34851e0c
+27,Yes,voter_1,"What are the create dates, states, and phone numbers of the votes that were for the contestant named 'Tabatha Gehling'?","SELECT T2.created ,  T2.state ,  T2.phone_number FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number WHERE T1.contestant_name  =  'Tabatha Gehling'","SELECT T3.created, T3.state, T3.phone_number FROM CONTESTANTS AS T1 INNER JOIN VOTES AS T2 ON T1.contestant_number = T2.contestant_number INNER JOIN AREA_CODE_STATE AS T3 ON T2.state = T3.state WHERE T1.contestant_name = 'Tabatha Gehling';",COLUMN_EXISTENCE,"The prediction selects created and phone_number from the AREA_CODE_STATE table (alias T3), but those columns do not exist in that table.",T3.created,openai/gpt-oss-120b,34851e0c
+28,No,voter_1,List the area codes in which voters voted both for the contestant 'Tabatha Gehling' and the contestant 'Kelly Clauss'.,SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Tabatha Gehling' INTERSECT SELECT T3.area_code FROM contestants AS T1 JOIN votes AS T2 ON T1.contestant_number  =  T2.contestant_number JOIN area_code_state AS T3 ON T2.state  =  T3.state WHERE T1.contestant_name  =  'Kelly Clauss',"SELECT DISTINCT T1.area_code 
+FROM AREA_CODE_STATE AS T1 
+JOIN VOTES AS T2 ON T1.state = T2.state 
+WHERE T2.contestant_number IN (
+    SELECT contestant_number 
+    FROM CONTESTANTS 
+    WHERE contestant_name = 'Tabatha Gehling'
+) 
+AND T2.contestant_number IN (
+    SELECT contestant_number 
+    FROM CONTESTANTS 
+    WHERE contestant_name = 'Kelly Clauss'
+);",SET_OPS_AVOIDANCE,"The gold uses INTERSECT to combine results from two separate contestant filters, but the prediction replaces it with a single query that requires the same vote row to match both contestants.",AND T2.contestant_number IN (SELECT ... 'Kelly Clauss'),openai/gpt-oss-120b,34851e0c
+29,Yes,world_1,What is the total population and average area of countries in the continent of North America whose area is bigger than 3000 ?,"select sum(population) ,  avg(surfacearea) from country where continent  =  ""north america"" and surfacearea  >  3000","SELECT SUM(T2.Population) AS TotalPopulation, AVG(T2.SurfaceArea) AS AverageArea
+FROM country AS T1
+JOIN city AS T2 ON T1.Code = T2.CountryCode
+WHERE T1.Continent = 'North America' AND T1.SurfaceArea > 3000;",COLUMN_EXISTENCE,"The prediction selects SurfaceArea from the city table alias T2, but city has no SurfaceArea column.",T2.SurfaceArea,openai/gpt-oss-120b,34851e0c
+30,No,world_1,What language is predominantly spoken in Aruba?,"SELECT T2.Language FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T1.Name  =  ""Aruba"" ORDER BY Percentage DESC LIMIT 1",SELECT T2.Language FROM city AS T1 INNER JOIN countrylanguage AS T2 ON T1.CountryCode = T2.CountryCode WHERE T1.Name = 'Aruba' ORDER BY T2.Percentage DESC LIMIT 1;,SPURIOUS_JOIN,"The prediction joins the city table, which is not needed, instead of joining the country table to get Aruba's language.",FROM city AS T1 INNER JOIN countrylanguage AS T2 ON T1.CountryCode = T2.CountryCode,openai/gpt-oss-120b,34851e0c
+31,No,world_1,What is the number of nations that use English and Dutch?,"SELECT COUNT(*) FROM (SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  ""English"" INTERSECT SELECT T1.Name FROM country AS T1 JOIN countrylanguage AS T2 ON T1.Code  =  T2.CountryCode WHERE T2.Language  =  ""Dutch"")","SELECT COUNT(DISTINCT T1.Code) FROM country AS T1 INNER JOIN countrylanguage AS T2 ON T1.Code = T2.CountryCode WHERE T2.Language IN ('English', 'Dutch');",SET_OPS_AVOIDANCE,"The prediction replaced the INTERSECT with an IN filter, counting countries with either language instead of those having both.","WHERE T2.Language IN ('English', 'Dutch')",openai/gpt-oss-120b,34851e0c
+32,No,wta_1,What are the first names and country codes for players who won both the WTA Championships and the Australian Open?,"SELECT T1.country_code ,  T1.first_name FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id WHERE T2.tourney_name  =  'WTA Championships' INTERSECT SELECT T1.country_code ,  T1.first_name FROM players AS T1 JOIN matches AS T2 ON T1.player_id  =  T2.winner_id WHERE T2.tourney_name  =  'Australian Open'","SELECT DISTINCT p.first_name, p.country_code
+FROM players p
+JOIN matches m ON p.player_id = m.winner_id
+WHERE m.tourney_name IN ('WTA Championships', 'Australian Open');",SET_OPS_AVOIDANCE,"The prediction omitted the INTERSECT set operation and used an IN filter, returning players who won either tournament instead of both.","WHERE m.tourney_name IN ('WTA Championships', 'Australian Open')",openai/gpt-oss-120b,34851e0c
+33,No,pets_1,Find the weight of the youngest dog.,SELECT weight FROM pets ORDER BY pet_age LIMIT 1,SELECT weight FROM Pets WHERE PetType = 'Dog' ORDER BY pet_age ASC LIMIT 1;,ACCEPTABLE_VARIANT,"Prediction adds the required PetType='Dog' filter, matching the question, while gold omits it.",Gold SQL lacks WHERE PetType = 'Dog',openai/gpt-oss-120b,34851e0c

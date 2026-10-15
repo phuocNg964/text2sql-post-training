@@ -2,10 +2,10 @@
   "model": "deepseek-coder-6.7b-instruct",
   "dataset": "spider_dev",
   "num_examples": 100,
-  "execution_accuracy": 0.66,
-  "invalid_sql_rate": 0.03,
-  "avg_latency_ms": 7215,
-  "p50_latency_ms": 6298,
-  "p95_latency_ms": 16382,
+  "execution_accuracy": 0.65,
+  "invalid_sql_rate": 0.02,
+  "avg_latency_ms": 6939,
+  "p50_latency_ms": 6414,
+  "p95_latency_ms": 12588,
   "peak_vram_gb": 4.43
 }
