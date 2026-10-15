@@ -46,11 +46,13 @@ def parse_sql(text: str) -> str:
 
 
 def load_records(split: str, data_dir: str, n: int | None = None) -> list[dict]:
-    if split == "spider_dev":
+    if split == "spider_train":
+        return load_spider(data_dir, split="train", n=n)
+    elif split == "spider_dev":
         return load_spider(data_dir, split="dev", n=n)
     elif split == "spider_test":
         return load_spider(data_dir, split="test", n=n)
-    raise ValueError(f"Unknown split: {split!r}. Choose from: spider_dev, spider_test")
+    raise ValueError(f"Unknown split: {split!r}. Choose from: spider_train, spider_dev, spider_test")
 
 
 def resolve_output(output: str) -> tuple[str, str]:
@@ -68,12 +70,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Text-to-SQL inference")
     parser.add_argument("--model", required=True, help="HuggingFace model name or local path")
     parser.add_argument("--adapter", default=None, help="LoRA adapter path or HF repo ID (merged at load time)")
-    parser.add_argument("--split", choices=["spider_dev", "spider_test"], default="spider_dev")
+    parser.add_argument("--split", choices=["spider_train", "spider_dev", "spider_test"], default="spider_dev")
     parser.add_argument("--eval_set", default=None,
                         help="Frozen eval JSONL path. Created from --split if missing.")
     parser.add_argument("--data_dir", default="data/")
     parser.add_argument("--output", required=True, help="Output folder or .jsonl file path")
     parser.add_argument("--max_new_tokens", type=int, default=256)
+    parser.add_argument("--batch_size", type=int, default=1, help="Inference batch size (default: 1)")
     parser.add_argument("--n_samples", type=int, default=None)
     parser.add_argument("--load_in_4bit", action="store_true", help="Force 4-bit NF4 quantization")
     args = parser.parse_args()
@@ -84,6 +87,7 @@ def main() -> None:
         print(f"  Adapter  : {args.adapter}")
     if args.load_in_4bit:
         print("  Quant    : 4-bit NF4")
+    print(f"  Batch    : {args.batch_size}")
     print(f"  Eval Set : {args.eval_set}" if args.eval_set else f"  Split    : {args.split}")
     print(f"  Output   : {args.output}")
     print("=" * 50)
@@ -107,19 +111,31 @@ def main() -> None:
         load_in_4bit=True if args.load_in_4bit else None,
     )
 
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+
     output_dir, output_file = resolve_output(args.output)
     os.makedirs(output_dir, exist_ok=True)
 
     predictions = []
     peak_vram_gb = 0.0
 
-    for i, record in enumerate(records):
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_prompt_from_record(record)},
+    batch_size = max(1, args.batch_size)
+    for batch_start in range(0, len(records), batch_size):
+        batch_records = records[batch_start : batch_start + batch_size]
+        batch_messages = [
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": build_prompt_from_record(r)},
+            ]
+            for r in batch_records
         ]
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        batch_texts = [
+            tokenizer.apply_chat_template(m, tokenize=False, add_generation_prompt=True)
+            for m in batch_messages
+        ]
+        inputs = tokenizer(batch_texts, return_tensors="pt", padding=True).to(model.device)
         input_tokens = inputs["input_ids"].shape[1]
 
         if torch.cuda.is_available():
@@ -131,30 +147,34 @@ def main() -> None:
                 **inputs,
                 max_new_tokens=args.max_new_tokens,
                 do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
             )
-        generation_time_ms = round((time.perf_counter() - t0) * 1000)
+        elapsed_ms = round((time.perf_counter() - t0) * 1000)
+        per_sample_ms = round(elapsed_ms / len(batch_records))
 
-        output_tokens = output_ids.shape[1] - input_tokens
         if torch.cuda.is_available():
             peak_vram_gb = max(peak_vram_gb, torch.cuda.max_memory_allocated() / 1024**3)
 
-        generated_sql = parse_sql(
-            tokenizer.decode(output_ids[0][input_tokens:], skip_special_tokens=True).strip()
-        )
+        for j, record in enumerate(batch_records):
+            idx = batch_start + j
+            output_tokens = output_ids[j].shape[0] - input_tokens
+            generated_sql = parse_sql(
+                tokenizer.decode(output_ids[j][input_tokens:], skip_special_tokens=True).strip()
+            )
 
-        predictions.append({
-            "example_id": f"{record['source']}_{i:04d}",
-            "db_id": record["db_id"],
-            "question": record["question"],
-            "gold_sql": record["gold_sql"],
-            "generated_sql": generated_sql,
-            "generation_time_ms": generation_time_ms,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "finish_reason": "stop" if output_tokens < args.max_new_tokens else "length",
-        })
-        print(f"  [{i + 1:>3}/{len(records)}] {record['db_id']} | {generation_time_ms}ms | {generated_sql[:60]}...")
+            predictions.append({
+                "example_id": f"{record['source']}_{idx:04d}",
+                "db_id": record["db_id"],
+                "question": record["question"],
+                "gold_sql": record["gold_sql"],
+                "generated_sql": generated_sql,
+                "generation_time_ms": per_sample_ms,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "finish_reason": "stop" if output_tokens < args.max_new_tokens else "length",
+            })
+            if len(records) <= 100 or (idx + 1) % 500 == 0 or idx + 1 == len(records):
+                print(f"  [{idx + 1:>4}/{len(records)}] {record['db_id']} | {per_sample_ms}ms/sample | {generated_sql[:50]}...")
 
     with open(output_file, "w", encoding="utf-8") as f:
         for p in predictions:

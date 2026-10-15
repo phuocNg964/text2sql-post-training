@@ -31,13 +31,13 @@ from src.data.loader import load_eval_set, load_spider
 from src.eval.evaluator import evaluate
 
 
-def load_records(split: str, data_dir: str) -> list[dict]:
+def load_records(split: str, data_dir: str, n: int | None = None) -> list[dict]:
     if split == "spider_train":
-        return load_spider(data_dir, split="train", n=1000)
+        return load_spider(data_dir, split="train", n=n)
     elif split == "spider_dev":
-        return load_spider(data_dir, split="dev", n=100)
+        return load_spider(data_dir, split="dev", n=n or 100)
     elif split == "spider_test":
-        return load_spider(data_dir, split="test", n=100)
+        return load_spider(data_dir, split="test", n=n or 100)
     raise ValueError(f"Unknown split: {split!r}. Choose from: spider_train, spider_dev, spider_test")
 
 
@@ -63,6 +63,7 @@ def main() -> None:
     parser.add_argument("--split", choices=["spider_train", "spider_dev", "spider_test"], default="spider_dev")
     parser.add_argument("--eval_set", default=None, help="Frozen eval JSONL (e.g. data/dev_set.jsonl)")
     parser.add_argument("--data_dir", default="data/")
+    parser.add_argument("--n_samples", type=int, default=None, help="Samples to evaluate (default: all for train, 100 for dev/test)")
     parser.add_argument("--predictions", default=None, help="Predictions folder or .jsonl path")
     parser.add_argument("--gold_eval", action="store_true", help="Use gold SQL (sanity check; expected EX=1.0)")
     parser.add_argument("--log_wandb", action="store_true", help="Log metrics to W&B")
@@ -82,7 +83,7 @@ def main() -> None:
         records = load_eval_set(args.eval_set, args.data_dir)
         print(f"Loaded {len(records)} records from {args.eval_set}")
     else:
-        records = load_records(args.split, args.data_dir)
+        records = load_records(args.split, args.data_dir, n=args.n_samples)
         print(f"Loaded {len(records)} records from {args.split}")
 
     if args.gold_eval:

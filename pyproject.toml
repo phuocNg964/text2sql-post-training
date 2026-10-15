@@ -17,6 +17,7 @@ dependencies = [
     "accelerate>=0.34.0",
     "bitsandbytes>=0.44.0",
     "unsloth",
+    "huggingface-hub>=0.24.0",
     # Data
     "datasets>=3.0.0",
     "sqlglot>=23.0.0",
@@ -28,6 +29,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
     "google-genai>=1.0.0",
+    "groq>=0.18.0",
 ]
 
 [project.optional-dependencies]

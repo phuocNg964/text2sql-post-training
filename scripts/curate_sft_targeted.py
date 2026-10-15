@@ -2,10 +2,10 @@
 curate_sft_targeted.py -- targeted SFT dataset via structural AST filtering.
 
 Strategy:
-  targeted_n = round(N * 0.85)     # split proportionally across all confirmed error categories
-  random_n   = N - targeted_n      # 15% anchor pool (uniform random, prevents regression)
+  targeted_n = round(N * (1.0 - anchor_share))  # split equally across active error categories
+  random_n   = N - targeted_n                   # anchor pool (uniform random, prevents regression)
 
-  per_cat_quota[C] = targeted_n * (errors_in_C / total_errors)
+  per_cat_quota[C] = targeted_n // num_categories
 
 Within each category, the Spider train pool is pre-filtered by SQL AST rules that
 match the structural signature of the failure mode.  Candidates are then shuffled
@@ -42,8 +42,8 @@ from src.data.sft_formatter import format_for_sft
 from src.eval.executor import execute_sql
 
 MAX_CHARS          = int(2048 * 3.5)  # ~7168 chars; matches configs/sft.yaml token budget
-ANCHOR_SHARE       = 0.15            # fraction of N reserved for random anchor pool
-TOP_K_CATEGORIES   = 3               # curate for all confirmed error categories in 6-category taxonomy
+ANCHOR_SHARE       = 0.2            # fraction of N reserved for random anchor pool
+TOP_K_CATEGORIES   = 6               # curate for all confirmed error categories in 6-category taxonomy
 
 VALID_ERROR_CATEGORIES = {
     "SET_OPS_AVOIDANCE",
@@ -267,10 +267,11 @@ def main() -> None:
     targeted_n   = round(args.n * (1.0 - args.anchor_share))
     random_n     = args.n - targeted_n
 
-    print(f"Error categories ({total_errors} total confirmed errors):")
+    print(f"Error categories ({len(error_cats)} active categories, {total_errors} total confirmed errors):")
     if targeted_n > 0:
-        # Proportional quotas based on natural error distribution; last category absorbs rounding remainder
-        per_cat_quotas = [round(targeted_n * n / total_errors) for _, n in error_cats]
+        # Equal quotas across active error categories; last category absorbs rounding remainder
+        num_cats = len(error_cats)
+        per_cat_quotas = [targeted_n // num_cats] * num_cats
         per_cat_quotas[-1] += targeted_n - sum(per_cat_quotas)
         for (cat, n_err), quota in zip(error_cats, per_cat_quotas):
             print(f"  {cat:<25} errors={n_err:>3}  quota={quota:>4}  ({quota / targeted_n:.1%})")
@@ -296,9 +297,14 @@ def main() -> None:
         fail_str = f"  skipped={failures}" if failures else ""
         print(f"  [{cat_name:<25}] collected {status}{fail_str}")
 
-    # 3. Anchor pool: uniform random from remaining candidates
-    random_collected, _ = collect_random(pool, random_n, global_seen, rng, "anchor")
-    print(f"  {'[anchor/random]':<27} collected {len(random_collected)}/{random_n}")
+    # 3. Anchor pool: fills pre-allocated random_n plus any category shortfall to guarantee exactly args.n
+    targeted_total = sum(len(c) for c in category_results)
+    actual_random_quota = max(0, args.n - targeted_total)
+    shortfall = actual_random_quota - random_n
+
+    random_collected, _ = collect_random(pool, actual_random_quota, global_seen, rng, "anchor")
+    backfill_str = f"  (includes {shortfall} backfilled from category shortfall)" if shortfall > 0 else ""
+    print(f"  {'[anchor/random]':<27} collected {len(random_collected)}/{actual_random_quota}{backfill_str}")
     print()
 
     train_records = [r for cat in category_results for r in cat] + random_collected

@@ -5,10 +5,12 @@ Core SFT training logic. Called by scripts/run_sft.py.
 """
 
 import json
+import os
 import random
 
 import torch
 from datasets import Dataset
+from transformers import TrainerCallback
 
 
 def load_jsonl(path: str) -> list[dict]:
@@ -51,6 +53,55 @@ def apply_chat_template(dataset: Dataset, tokenizer) -> Dataset:
     return dataset.map(fmt, batched=True)
 
 
+class EXCheckpointCallback(TrainerCallback):
+    """Run EX eval once per epoch; save adapter to best_dir when EX improves."""
+
+    def __init__(self, records: list[dict], tokenizer, best_dir: str):
+        self.records   = records
+        self.tokenizer = tokenizer
+        self.best_dir  = best_dir
+        self.best_ex   = 0.0
+
+    def on_epoch_end(self, args, state, control, model=None, **kwargs):
+        from unsloth import FastLanguageModel
+        from src.eval.evaluator import evaluate
+
+        # generate SQL for each eval record
+        FastLanguageModel.for_inference(model)
+        predicted_sqls = []
+        for record in self.records:
+            msgs = [m for m in record["messages"] if m["role"] != "assistant"]
+            prompt = self.tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True
+            )
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(model.device)
+            with torch.no_grad():
+                out = model.generate(**inputs, max_new_tokens=256, do_sample=False)
+            sql = self.tokenizer.decode(
+                out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+            ).strip()
+            predicted_sqls.append(sql)
+        FastLanguageModel.for_training(model)
+
+        # compute EX and log to W&B
+        result = evaluate(self.records, predicted_sqls)
+        ex = result["execution_accuracy"]
+        if state.is_world_process_zero:
+            import wandb
+            wandb.log({"eval/execution_accuracy": ex}, step=state.global_step)
+            print(f"  EX epoch {int(state.epoch)}: {ex:.4f}  (best: {self.best_ex:.4f})")
+
+        # save adapter if new best EX
+        if ex > self.best_ex:
+            self.best_ex = ex
+            model.save_pretrained(self.best_dir)
+            self.tokenizer.save_pretrained(self.best_dir)
+            if state.is_world_process_zero:
+                print(f"  → Saved best model to {self.best_dir}")
+
+        return control
+
+
 def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
     """
     Run SFT training.
@@ -79,6 +130,15 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
     )
     tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
 
+    # build EX eval records for mid-training callback (skipped in smoke tests)
+    if max_steps <= 0:
+        from src.data.loader import load_eval_set
+        raw_ex    = load_jsonl(data_cfg["eval_path"])
+        eval_recs = load_eval_set(data_cfg["eval_path"], "data/")
+        ex_records = [{**ev, "messages": r["messages"]} for r, ev in zip(raw_ex, eval_recs)]
+        best_dir = os.path.join(output_cfg["dir"], "best_model")
+        ex_cb = EXCheckpointCallback(ex_records, tokenizer, best_dir)
+
     model = FastLanguageModel.get_peft_model(
         model,
         r=lora_cfg["r"],
@@ -100,10 +160,10 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         else {"num_train_epochs": training_cfg["epochs"]}
     )
 
-    eval_steps   = training_cfg.get("eval_steps", None)
-    use_steps    = eval_steps is not None and max_steps <= 0
-    eval_strategy  = "steps" if use_steps else ("epoch" if max_steps <= 0 else "no")
-    save_strategy  = eval_strategy if max_steps <= 0 else "no"
+    eval_steps    = training_cfg.get("eval_steps", None)
+    use_steps     = eval_steps is not None and max_steps <= 0
+    eval_strategy = "steps" if use_steps else ("epoch" if max_steps <= 0 else "no")
+    save_strategy = eval_strategy if max_steps <= 0 else "no"
 
     sft_config=SFTConfig(
         **epoch_args,
@@ -126,8 +186,9 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         save_steps=eval_steps if use_steps else None,
         load_best_model_at_end=max_steps <= 0,
         metric_for_best_model="eval_loss",
+        save_total_limit=2,
         output_dir=output_cfg["dir"],
-        logging_steps=10,
+        logging_steps=20,
         report_to=report_to,
         seed=training_cfg["seed"],
     )
@@ -145,6 +206,9 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
         instruction_part="<|im_start|>user\n",
         response_part="<|im_start|>assistant\n",
     )
+
+    if max_steps <= 0:
+        trainer.add_callback(ex_cb)
 
     eff_batch = training_cfg["batch_size"] * training_cfg["grad_accum"]
     print(f"Model: {model_cfg['name']}  |  r={lora_cfg['r']}  |  epochs={training_cfg['epochs']}  |  eff_batch={eff_batch}")
