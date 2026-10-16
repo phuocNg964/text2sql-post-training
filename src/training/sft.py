@@ -134,7 +134,8 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
     if max_steps <= 0:
         from src.data.loader import load_eval_set
         raw_ex    = load_jsonl(data_cfg["eval_path"])
-        eval_recs = load_eval_set(data_cfg["eval_path"], "data/")
+        dev_path  = data_cfg.get("dev_set_path", "data/dev_set.jsonl")
+        eval_recs = load_eval_set(dev_path, "data/")
         ex_records = [{**ev, "messages": r["messages"]} for r, ev in zip(raw_ex, eval_recs)]
         best_dir = os.path.join(output_cfg["dir"], "best_model")
         ex_cb = EXCheckpointCallback(ex_records, tokenizer, best_dir)

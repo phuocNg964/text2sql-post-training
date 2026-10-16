@@ -30,17 +30,18 @@ training:
   eval_steps: 50              # evaluate every 50 steps (~2-3x per epoch) — enough to spot overfitting trend
 
 data:
-  train_path: "data/sft_targeted_train.jsonl"   # targeted AST-filtered curation
-  eval_path:  "data/sft_eval.jsonl"             # 100 examples (stratified spider_dev)
+  train_path: "data/sft_targeted_train_mined.jsonl"
+  eval_path:  "data/sft_eval.jsonl"
+  dev_set_path: "data/dev_set.jsonl"
 
 output:
   dir: "checkpoints/sft"
 
 wandb:
   project: "text2sql-post-training"
-  name: "sft-qwen3b-targeted-r16"
+  name: "sft-qwen3b-failure-mined-r16"
   tags:
     - sft
     - targeted
-    - ast-filtered
+    - failure-mined
 
