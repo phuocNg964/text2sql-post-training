@@ -24,23 +24,25 @@ training:
   learning_rate: 1.0e-4
   lr_scheduler: "cosine"
   warmup_ratio: 0.05          # 5% of total steps
-  weight_decay: 0.05          # light regularization on LoRA adapter weights
+  weight_decay: 0.1           # light regularization on LoRA adapter weights
   optim: "adamw_8bit"
   seed: 42
   eval_steps: 50              # evaluate every 50 steps (~2-3x per epoch) — enough to spot overfitting trend
 
 data:
-  train_path: "data/sft_targeted_train.jsonl"   # targeted AST-filtered curation
-  eval_path:  "data/sft_eval.jsonl"             # 100 examples (stratified spider_dev)
+  train_path: "data/sft_targeted_2k_train_mined.jsonl"
+  eval_path:  "data/sft_eval.jsonl"
+  dev_set_path: "data/dev_set.jsonl"
 
 output:
-  dir: "checkpoints/sft"
+  dir: "checkpoints/sft-2k-mined"
+  pred_dir: "predictions/qwen2.5_coder_3b_sft_best"
 
 wandb:
   project: "text2sql-post-training"
-  name: "sft-qwen3b-targeted-r16"
+  name: "sft-qwen3b-2k-failure-mined-r16"
   tags:
     - sft
     - targeted
-    - ast-filtered
+    - failure-mined-2k
 
