@@ -54,100 +54,51 @@ def apply_chat_template(dataset: Dataset, tokenizer) -> Dataset:
 
 
 class EXCheckpointCallback(TrainerCallback):
-    """Run EX eval on eval_steps (or epoch end); save adapter to best_dir when EX improves."""
+    """Run EX eval once per epoch; save adapter to best_dir when EX improves."""
 
-    def __init__(self, records: list[dict], tokenizer, best_dir: str, batch_size: int = 8, eval_steps: int = None, pred_dir: str = None):
-        self.records              = records
-        self.tokenizer            = tokenizer
-        self.best_dir             = best_dir
-        self.batch_size           = batch_size
-        self.eval_steps           = eval_steps
-        self.pred_dir             = pred_dir or os.path.join(best_dir, "predictions")
-        self.best_ex              = 0.0
-        self.last_evaluated_step  = -1
+    def __init__(self, records: list[dict], tokenizer, best_dir: str):
+        self.records   = records
+        self.tokenizer = tokenizer
+        self.best_dir  = best_dir
+        self.best_ex   = 0.0
 
-    def _run_eval(self, model, state, label: str):
+    def on_epoch_end(self, args, state, control, model=None, **kwargs):
         from unsloth import FastLanguageModel
         from src.eval.evaluator import evaluate
 
-        # build prompts (strip assistant turn)
-        prompts = [
-            self.tokenizer.apply_chat_template(
-                [m for m in rec["messages"] if m["role"] != "assistant"],
-                tokenize=False, add_generation_prompt=True,
-            )
-            for rec in self.records
-        ]
-
-        # batched generation with left-padding
+        # generate SQL for each eval record
         FastLanguageModel.for_inference(model)
-        if hasattr(model, "generation_config") and model.generation_config is not None:
-            model.generation_config.max_length = None
-        orig_padding_side = self.tokenizer.padding_side
-        self.tokenizer.padding_side = "left"
-
         predicted_sqls = []
-        for i in range(0, len(prompts), self.batch_size):
-            batch_prompts = prompts[i : i + self.batch_size]
-            inputs = self.tokenizer(
-                batch_prompts, return_tensors="pt", padding=True
-            ).to(model.device)
-            input_len = inputs["input_ids"].shape[1]
+        for record in self.records:
+            msgs = [m for m in record["messages"] if m["role"] != "assistant"]
+            prompt = self.tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True
+            )
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(model.device)
             with torch.no_grad():
-                out = model.generate(
-                    **inputs,
-                    max_new_tokens=256,
-                    max_length=None,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            for seq in out:
-                sql = self.tokenizer.decode(
-                    seq[input_len:], skip_special_tokens=True
-                ).strip()
-                predicted_sqls.append(sql)
-
-        self.tokenizer.padding_side = orig_padding_side
+                out = model.generate(**inputs, max_new_tokens=256, do_sample=False)
+            sql = self.tokenizer.decode(
+                out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+            ).strip()
+            predicted_sqls.append(sql)
         FastLanguageModel.for_training(model)
 
         # compute EX and log to W&B
         result = evaluate(self.records, predicted_sqls)
         ex = result["execution_accuracy"]
-        self.last_evaluated_step = state.global_step
         if state.is_world_process_zero:
             import wandb
             wandb.log({"eval/execution_accuracy": ex}, step=state.global_step)
-            print(f"  EX {label}: {ex:.4f}  (best: {self.best_ex:.4f})")
+            print(f"  EX epoch {int(state.epoch)}: {ex:.4f}  (best: {self.best_ex:.4f})")
 
-        # save adapter + predictions if new best EX
+        # save adapter if new best EX
         if ex > self.best_ex:
             self.best_ex = ex
             model.save_pretrained(self.best_dir)
             self.tokenizer.save_pretrained(self.best_dir)
             if state.is_world_process_zero:
-                import json, os
-                os.makedirs(self.pred_dir, exist_ok=True)
-                with open(os.path.join(self.pred_dir, "predictions.jsonl"), "w") as f:
-                    for r in result["results"]:
-                        f.write(json.dumps(r) + "\n")
-                with open(os.path.join(self.pred_dir, "evaluation.json"), "w") as f:
-                    json.dump(result, f, indent=2)
                 print(f"  → Saved best model to {self.best_dir}")
-                print(f"  → Saved predictions to {self.pred_dir}")
 
-    def on_step_end(self, args, state, control, model=None, **kwargs):
-        if self.eval_steps and state.global_step > 0 and state.global_step % self.eval_steps == 0:
-            self._run_eval(model, state, f"step {state.global_step}")
-        return control
-
-    def on_epoch_end(self, args, state, control, model=None, **kwargs):
-        if not self.eval_steps:
-            self._run_eval(model, state, f"epoch {int(state.epoch)}")
-        return control
-
-    def on_train_end(self, args, state, control, model=None, **kwargs):
-        if self.eval_steps and state.global_step != self.last_evaluated_step:
-            self._run_eval(model, state, f"final step {state.global_step}")
         return control
 
 
@@ -183,13 +134,10 @@ def train(cfg: dict, max_steps: int = -1, report_to: str = "wandb") -> None:
     if max_steps <= 0:
         from src.data.loader import load_eval_set
         raw_ex    = load_jsonl(data_cfg["eval_path"])
-        dev_path  = data_cfg.get("dev_set_path", "data/dev_set.jsonl")
-        eval_recs = load_eval_set(dev_path, "data/")
+        eval_recs = load_eval_set(data_cfg["eval_path"], "data/")
         ex_records = [{**ev, "messages": r["messages"]} for r, ev in zip(raw_ex, eval_recs)]
         best_dir = os.path.join(output_cfg["dir"], "best_model")
-        pred_dir = output_cfg.get("pred_dir", "predictions/qwen2.5_coder_3b_sft_best")
-        eval_steps = training_cfg.get("eval_steps", None)
-        ex_cb = EXCheckpointCallback(ex_records, tokenizer, best_dir, eval_steps=eval_steps, pred_dir=pred_dir)
+        ex_cb = EXCheckpointCallback(ex_records, tokenizer, best_dir)
 
     model = FastLanguageModel.get_peft_model(
         model,

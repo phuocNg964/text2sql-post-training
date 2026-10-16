@@ -14,20 +14,16 @@ import glob
 import json
 import os
 
-import re
+# Map model basename → (display name, param size)
+MODEL_META = {
+    "Qwen2.5-Coder-1.5B-Instruct": ("Qwen2.5-Coder-1.5B", "1.5B"),
+    "Qwen2.5-Coder-3B-Instruct":   ("Qwen2.5-Coder-3B",   "3B"),
+    "deepseek-coder-6.7b-instruct": ("DeepSeek-Coder-6.7B", "6.7B"),
+    "Qwen2.5-Coder-7B-Instruct":   ("Qwen2.5-Coder-7B",   "7B"),
+}
 
-
-def extract_params(name: str) -> str:
-    """Extract parameter count (e.g. '3B', '6.7B') from folder name."""
-    m = re.search(r"(\d+(?:\.\d+)?)[bB]", name)
-    return f"{m.group(1)}B" if m else "?"
-
-
-def param_sort_key(params: str) -> float:
-    try:
-        return float(params[:-1]) if params.endswith("B") else 999.0
-    except ValueError:
-        return 999.0
+# Display order (by params ascending)
+PARAM_ORDER = {"1.5B": 0, "3B": 1, "6.7B": 2, "7B": 3}
 
 
 def fmt_pct(rate: float | None) -> str:
@@ -64,11 +60,12 @@ def load_all(pred_dir: str) -> list[dict]:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
 
-        folder_name = os.path.basename(os.path.dirname(path))
-        params = extract_params(folder_name)
+        model_id = d.get("model", "")
+        basename = model_id.split("/")[-1]
+        display_name, params = MODEL_META.get(basename, (basename[:24], "?"))
 
         rows.append({
-            "Model":       folder_name,
+            "Model":       display_name,
             "Params":      params,
             "EX":          d.get("execution_accuracy"),
             "Invalid SQL": d.get("invalid_sql_rate"),
@@ -76,7 +73,7 @@ def load_all(pred_dir: str) -> list[dict]:
             "Peak VRAM":   d.get("peak_vram_gb"),
         })
 
-    rows.sort(key=lambda r: (param_sort_key(r["Params"]), r["Model"]))
+    rows.sort(key=lambda r: PARAM_ORDER.get(r["Params"], 99))
     return rows
 
 
