@@ -1,0 +1,11 @@
+{
+  "model": "",
+  "dataset": "spider_train",
+  "num_examples": 7000,
+  "execution_accuracy": 0.6901,
+  "invalid_sql_rate": 0.095,
+  "avg_latency_ms": 451,
+  "p50_latency_ms": 399,
+  "p95_latency_ms": 822,
+  "peak_vram_gb": 9.1
+}
